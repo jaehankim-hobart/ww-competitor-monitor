@@ -572,3 +572,30 @@ def main():
             return
         send_via_smtp(subject, body)
 
+
+# 1) Run and capture stdout
+- name: Run monitor in SAMPLE mode (no send)
+  env:
+    SEND_MODE: GRAPH
+    MAIL_FROM: "ww-monitor@itwfeg.com"
+    MAIL_TO: "jaehan.kim@itwfeg.com"
+    GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
+    GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
+    GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+    SAMPLE_EVENTS: "1"
+  run: |
+    set -e
+    python monitor_warewashing.py | tee monitor_output.txt
+
+# 2) Extract HTML body
+- name: Build preview.html from output
+  run: |
+    awk '/=== HTML BODY ===/{flag=1;next} flag{print}' monitor_output.txt > preview.html
+    echo "Wrote preview.html"
+
+# 3) Upload artifact
+- name: Upload preview artifact
+  uses: actions/upload-artifact@v4
+  with:
+    name: ww-monitor-preview
+    path: preview.html
