@@ -25,14 +25,21 @@ def load_yaml(path):
         return yaml.safe_load(f)
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config")
-COMP_CONF = load_yaml(os.path.join(CONFIG_DIR, "competitors.yaml"))
-URLS_CONF = load_yaml(os.path.join(CONFIG_DIR, "urls.yaml"))
+COMP_CONF  = load_yaml(os.path.join(CONFIG_DIR, "competitors.yaml"))
+URLS_CONF  = load_yaml(os.path.join(CONFIG_DIR, "urls.yaml"))
 STYLE_CONF = load_yaml(os.path.join(CONFIG_DIR, "styling.yaml"))
 
-COMPETITOR_COLS = COMP_CONF["competitors"]
-LINES_ORDER = COMP_CONF["lines"]
+# Safe fallbacks in case keys are missing from competitors.yaml
+DEFAULT_COMPETITORS = [
+    "Champion", "Jackson", "Meiko", "CMA", "Noble", "ADS", "Moyer Diebel", "Douglas", "LVO"
+]
+DEFAULT_LINES = ["Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"]
 
-DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
+COMPETITOR_COLS = COMP_CONF.get("competitors", DEFAULT_COMPETITORS)
+LINES_ORDER     = COMP_CONF.get("lines", DEFAULT_LINES)
+
+DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Typ
+
 
 # -------------------
 # Build an N/A matrix
