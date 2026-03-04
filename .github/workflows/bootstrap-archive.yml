@@ -1,0 +1,77 @@
+name: WW Monitor – Bootstrap Archive (one-time)
+
+on:
+  # Manual trigger from the Actions tab
+  workflow_dispatch: {}
+
+# The workflow must be able to push archived PDFs back to the repo
+permissions:
+  contents: write
+
+jobs:
+  bootstrap-archive:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Checkout the repo with a full history and credentials so we can push commits
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # required for committing/pushing back
+          persist-credentials: true # use GITHUB_TOKEN for push
+
+      # 2) (Optional) Show current branch/context (useful if you ever branch off for archives)
+      - name: Show git status
+        run: |
+          git rev-parse --abbrev-ref HEAD
+          git status --porcelain
+
+      # 3) Set up Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 4) Install required Python libs
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 lxml pyyaml
+
+      # 5) Run the monitor in BOOTSTRAP mode
+      #    BOOTSTRAP_ARCHIVE=1:
+      #      - crawls all seeds
+      #      - downloads *all* spec/brochure PDFs
+      #      - archives them under ./archive/...
+      #      - commits/pushes files (script calls git add/commit/push)
+      #      - EXITS without sending email
+      - name: Bootstrap full PDF archive (no email)
+        env:
+          # Core runtime behavior
+          BOOTSTRAP_ARCHIVE: "1"      # <-- enables one-time full archive mode
+          SEND_MODE: GRAPH            # irrelevant here (script exits before send)
+          WRITE_PREVIEW: "0"          # no preview for bootstrap
+
+          # Graph secrets not needed for bootstrap exit, but harmless if present
+          GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
+          GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+
+          # Optional: Customize archive directory or branch naming used in links
+          # ARCHIVE_DIR: "archive"
+          # GITHUB_REF_NAME: ${{ github.ref_name }}  # default branch name detected by Actions
+          # GITHUB_REPOSITORY: ${{ github.repository }} # owner/repo (Actions sets this automatically)
+        run: |
+          set -e
+          python monitor_warewashing.py
+
+      # 6) Upload the archived files as an artifact for convenience (so you can spot-check)
+      - name: Upload archived PDFs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-bootstrap-archives
+          path: archive/**/*
+          if-no-files-found: ignore
+
+      # 7) Final log
+      - name: Done
+        run: echo "Bootstrap archive finished. All discovered PDFs are saved under ./archive and pushed to the repo."
