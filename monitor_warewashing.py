@@ -1,3 +1,4 @@
+
 # monitor_warewashing.py
 # Python 3.11+
 # Features:
@@ -86,7 +87,7 @@ def build_na_map():
 # HTML helper (real <a> tag)
 # -------------------
 def a(href: str, label: str) -> str:
-    return f'{href}{label}</a>'
+    return f'<a href="{href}">{label}</a>'
 
 # -------------------
 # Label helpers
@@ -287,6 +288,14 @@ def infer_line_from_path(url):
     if "under" in s: return UNDER
     if any(x in s for x in ["pan","pot","rack-washer","prep"]): return PREP
     return "Unknown"
+
+# -------------------
+# PDF filter (FIX 1: ensure defined before crawl_seed uses it)
+# -------------------
+PDF_PATTERNS = re.compile(
+    r"(spec(ification)?\s*sheet|data\s*sheet|datasheet|brochure|sales\s*sheet)",
+    re.I
+)
 
 # -------------------
 # Archiving helpers
@@ -499,9 +508,13 @@ def compose_email(all_events):
     for line in LINES_ORDER:
         html.append("<tr>")
 
-        # First column: shaded + icon above text + hard line break
+        # First column: shaded + icon above text + hard line break (FIX 2: real <img> tag)
         cid, _ = line_icon_name(line)
-        icon_html = f'cid:{cid}<br>' if cid else ""
+        icon_html = (
+            f'<img src="cid:{cid}" alt="{line}" width="48" height="48" '
+            f'style="display:block; margin:0 0 4px 0;">'
+            if cid else ""
+        )
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
@@ -689,6 +702,8 @@ def main():
     if BOOTSTRAP and not use_samples:
         print("[BOOTSTRAP] Starting full archive …")
         all_events = crawl_all(cur)
+        # Persist any resource changes made during crawl (resources table)
+        con.commit()
         # commit/push archived PDFs
         archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
         if archived_files:
