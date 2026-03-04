@@ -196,6 +196,10 @@ for c in competitors:
 
     html.append(f"<td style='{cell_style}'>{cell_html}</td>")
 
+            
+
+            html.append(f"<td style='{cell_style}'>{cell_html}</td>")
+
         html.append("</tr>")
 
     html.append("</tbody></table></div>")
@@ -593,5 +597,3 @@ def main():
 # -------------------
 if __name__ == "__main__":
     main()
-
-
