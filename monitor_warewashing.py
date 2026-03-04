@@ -59,9 +59,10 @@ def build_na_map():
                 na[line][comp] = True
     return na
 
+
 def a(href: str, label: str) -> str:
-    """HTML anchor helper."""
-    return f'<a href="{href}">{label}</a>'
+    return f'{href}{label}</a>'
+
 
 def pivot_for_table(all_events):
     """
@@ -99,13 +100,6 @@ def pivot_for_table(all_events):
 
 
 def compose_email(all_events):
-    """
-    Build the subject + HTML body:
-    - Same fixed column width for every column (table-layout: fixed)
-    - Shade cells with updates using #FFFFE0
-    - Show 'N/A' when urls.yaml lists [] for that competitor+line
-    - Show 'No Update' when no events and the line is applicable
-    """
     if all_events:
         comps = sorted({e["competitor"] for e in all_events})
         subject = "Daily WW Competitor monitor – " + ", ".join(comps)
@@ -160,6 +154,7 @@ def compose_email(all_events):
 
     html.append("</tbody></table></div>")
     return subject, "\n".join(html)
+
 
 # -------------------
 # Constants & settings
@@ -426,46 +421,6 @@ def crawl_all(cur):
     return events
 
 # -------------------
-# Email builder (table HTML)
-# -------------------
-def a(href: str, label: str) -> str:
-    """HTML anchor helper (real tags)."""
-    return f'<a href="{href}">{label}</a>'
-
-
-
-def pivot_for_table(all_events):
-    competitors = COMPETITOR_COLS[:]  # fixed order you provided
-    # Include unexpected names (very rare) at the end so we don't lose data
-    extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
-    competitors += [c for c in sorted(set(extras))]
-
-    # Table of updates
-    table = {line: {c: [] for c in competitors} for line in LINES_ORDER}
-
-    # NA matrix based on urls.yaml
-    na_map = build_na_map()
-
-    for e in all_events:
-        c, line, what, change = e["competitor"], e["line"], e["what"], e["change"]
-        if what in ("Spec Sheet","Brochure"):
-            if change == "updated" and e.get("old_url"):
-                label = (
-                    f'{what} updated: '
-                    f'{a(e["url"], beautify_filename(e["url"]))} '
-                    f'(old: {a(e["old_url"], beautify_filename(e["old_url"]))} '
-                    f'→ new: {a(e["url"], beautify_filename(e["url"]))})'
-                )
-            else:
-                label = f'{what} {change}: {a(e["url"], beautify_filename(e["url"]))}'
-            table[line][c].append(label)
-        elif what == "Product page":
-            label = f'Product page {change}: {a(e["url"], e["url"])}'
-            table[line][c].append(label)
-
-    return competitors, table, na_map
-
-# -------------------
 # Senders
 # -------------------
 def send_via_graph(subject, html_body):
@@ -511,7 +466,6 @@ def send_via_smtp(subject, html_body):
 # -------------------
 # Preview Test
 # -------------------
-
 def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
     """Writes a standalone HTML file for easy preview in SAMPLE mode."""
     html = f"""<!doctype html>
@@ -587,5 +541,11 @@ def main():
             return
         send_via_smtp(subject, body)
 
+
+# -------------------
+# Entry point
+# -------------------
+if __name__ == "__main__":
+    main()
 
 
