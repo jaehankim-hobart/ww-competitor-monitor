@@ -64,6 +64,33 @@ def a(href: str, label: str) -> str:
     return f'{href}{label}</a>'
 
 
+from urllib.parse import urlparse, unquote
+
+def display_url_label(href: str, max_len: int = 60) -> str:
+    """
+    Build a compact, human-readable label for a URL:
+      domain/last-path-segment, decoded, with -/_ -> spaces, and middle-ellipsis if too long.
+    """
+    try:
+        u = urlparse(href)
+        path = (u.path or "").rstrip("/")
+        last = path.split("/")[-1] if path else ""
+        if last:
+            label = f"{u.netloc}/{last}"
+        else:
+            # e.g., homepage or no path
+            label = u.netloc or href
+        label = unquote(label)
+        # So it's readable but still recognizable
+        label = re.sub(r"[_\-]+", " ", label).strip()
+        if len(label) > max_len:
+            keep = max_len // 2 - 1
+            label = f"{label[:keep]}…{label[-keep:]}"
+        return label or href
+    except Exception:
+        return href
+
+
 def pivot_for_table(all_events):
     """
     Convert flat event list into table[line][competitor] = [bullets...]
@@ -92,10 +119,10 @@ def pivot_for_table(all_events):
                 label = f'{what} {change}: {a(e["url"], beautify_filename(e["url"]))}'
             table[line][c].append(label)
         elif what == "Product page":
-            # For pages, just show URL as the label
-            label = f'Product page {change}: {a(e["url"], e["url"])}'
+            # Use shortened, readable label while keeping full URL as href
+            short = display_url_label(e["url"], max_len=60)
+            label = f'Product page {change}: {a(e["url"], short)}'
             table[line][c].append(label)
-
     return competitors, table, na_map
 
 
@@ -135,18 +162,41 @@ def compose_email(all_events):
 
         for c in competitors:
             items = table[line].get(c, [])
-            cell_style = f"width:{st['column_width']};"
-            if items:  # shade cells containing updates
-                cell_style += f" background:{st['update_bg']};"
+           
+# Build a base style that forces wrapping inside cells
+wrap_css = (
+    "white-space: normal; "
+    "word-break: break-word; "         # break long words/URLs if needed
+    "overflow-wrap: anywhere;"         # allow breaking at any point for very long tokens
+)
 
-            if not items:
-                if na_map.get(line, {}).get(c, False):
-                    cell_html = "<em>N/A</em>"
-                else:
-                    cell_html = "<em>No Update</em>"
-            else:
-                bullets = "".join(f"<li>{it}</li>" for it in items)
-                cell_html = f"<ul style='margin:0 0 0 17px; padding-left:0;'>{bullets}</ul>"
+for c in competitors:
+    items = table[line].get(c, [])
+ # Cell style: fixed width + wrap + optional highlight
+    cell_style = f"width:{st['column_width']}; {wrap_css}"
+    if items:
+        cell_style += f" background:{st['update_bg']};"
+
+    if not items:
+        if na_map.get(line, {}).get(c, False):
+            cell_html = "<em>N/A</em>"
+        else:
+            cell_html = "<em>No Update</em>"
+    else:
+        # Add wrap styles to <ul> and <li> to ensure bullets also wrap
+        bullets = "".join(
+            f"<li style='{wrap_css} margin:0 0 4px 0;'>{it}</li>"
+            for it in items
+        )
+        cell_html = (
+            f"<ul style='margin:0 0 0 17px; padding-left:0; list-style-position: outside; {wrap_css}'>"
+            f"{bullets}"
+            f"</ul>"
+        )
+
+    html.append(f"<td style='{cell_style}'>{cell_html}</td>")
+
+            
 
             html.append(f"<td style='{cell_style}'>{cell_html}</td>")
 
