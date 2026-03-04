@@ -550,8 +550,7 @@ def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
 </html>"""
     with open(fname, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"[TEST MODE] Wrote {fname} with rendered email HT
-
+    print(f"[TEST MODE] Wrote {fname} with rendered email HTML.")
 
 # -------------------
 # Main
