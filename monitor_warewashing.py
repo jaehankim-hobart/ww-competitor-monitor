@@ -8,8 +8,9 @@
 # - Emits events with old→new links for updated PDFs
 # - Beautifies PDF file names for email display
 # - Builds a 5×N HTML table (rows = product lines; columns = fixed competitor order)
-# - Shades FIRST column (Product Line) same as header and shows a small icon
-# - Sends email via Microsoft Graph using app (client credentials), with inline icons
+# - Shades FIRST column (Product Line) same as header and shows a small icon (CID)
+# - Archives PDFs to ./archive and commits/pushes them (stable links in email)
+# - Sends via Microsoft Graph (client credentials), attaches icons inline
 # - SQLite state to remember previous hashes/headers
 # - Sample mode & preview.html writer for test workflow
 
@@ -46,16 +47,23 @@ DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "R
 # -------------------
 # Email styling defaults (in case keys are missing)
 # -------------------
-EMAIL_STYLE      = STYLE_CONF.get("email", {})
-EMAIL_FONT_FAMILY= EMAIL_STYLE.get("font_family", "Segoe UI, Arial, sans-serif")
-EMAIL_FONT_SIZE  = EMAIL_STYLE.get("font_size", "14px")
-EMAIL_HEADER_BG  = EMAIL_STYLE.get("header_bg", "#f3f3f3")
-EMAIL_HEADER_FG  = EMAIL_STYLE.get("header_fg", "#000000")
-EMAIL_BODY_BG    = EMAIL_STYLE.get("body_bg",   "#ffffff")
-EMAIL_BORDER_CLR = EMAIL_STYLE.get("border_color", "#dddddd")
-EMAIL_CELL_PAD   = EMAIL_STYLE.get("cell_padding", "6")
-EMAIL_COL_WIDTH  = EMAIL_STYLE.get("column_width", "180px")  # same width for all columns
-EMAIL_UPDATE_BG  = EMAIL_STYLE.get("update_bg", "#FFFFE0")   # cells with updates
+EMAIL_STYLE       = STYLE_CONF.get("email", {})
+EMAIL_FONT_FAMILY = EMAIL_STYLE.get("font_family", "Segoe UI, Arial, sans-serif")
+EMAIL_FONT_SIZE   = EMAIL_STYLE.get("font_size", "14px")
+EMAIL_HEADER_BG   = EMAIL_STYLE.get("header_bg", "#f3f3f3")
+EMAIL_HEADER_FG   = EMAIL_STYLE.get("header_fg", "#000000")
+EMAIL_BODY_BG     = EMAIL_STYLE.get("body_bg", "#ffffff")
+EMAIL_BORDER_CLR  = EMAIL_STYLE.get("border_color", "#dddddd")
+EMAIL_CELL_PAD    = EMAIL_STYLE.get("cell_padding", "6")
+EMAIL_COL_WIDTH   = EMAIL_STYLE.get("column_width", "180px")  # same width for all columns
+EMAIL_UPDATE_BG   = EMAIL_STYLE.get("update_bg", "#FFFFE0")   # cells with updates
+
+# -------------------
+# Archiving configuration (A)
+# -------------------
+ARCHIVE_DIR        = os.getenv("ARCHIVE_DIR", "archive")
+GITHUB_REPOSITORY  = os.getenv("GITHUB_REPOSITORY", "")   # e.g., "jaehankim-hobart/ww-competitor-monitor"
+GITHUB_REF_NAME    = os.getenv("GITHUB_REF_NAME", "main") # branch name
 
 # -------------------
 # Build an N/A matrix
@@ -78,7 +86,7 @@ def build_na_map():
 # HTML helper (real <a> tag)
 # -------------------
 def a(href: str, label: str) -> str:
-    return f'<a href="{href}">{label}</a>'
+    return f'{href}{label}</a>'
 
 # -------------------
 # Label helpers
@@ -167,7 +175,9 @@ def init_db():
         line TEXT,
         url TEXT,
         what TEXT,           -- Spec Sheet | Brochure | Product page
-        change TEXT          -- added | updated
+        change TEXT,         -- added | updated
+        archived_path TEXT,  -- repo path if we archived a copy
+        archived_url  TEXT   -- raw GitHub URL to archived copy
     )
     """)
     con.commit()
@@ -279,6 +289,37 @@ def infer_line_from_path(url):
     return "Unknown"
 
 # -------------------
+# Archiving helpers (B)
+# -------------------
+def ensure_dir(path: str):
+    os.makedirs(path, exist_ok=True)
+
+def archive_pdf(competitor: str, line: str, url: str, content: bytes, display_name: str, sha_hex: str) -> str:
+    """
+    Save the given PDF bytes under archive/<competitor>/<line>/DATE__NAME__sha256_HASH.pdf
+    Returns the local repo path of the archived PDF.
+    """
+    safe_comp = re.sub(r"[\\/]+", "_", competitor).strip()
+    safe_line = re.sub(r"[\\/]+", "_", line).strip()
+
+    subdir = os.path.join(ARCHIVE_DIR, safe_comp, safe_line)
+    ensure_dir(subdir)
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    base_name = re.sub(r"[^\w\- \.\(\)]+", "_", display_name).strip()
+    fname = f"{date_str}__{base_name}__sha256_{sha_hex[:8]}.pdf"
+    fpath = os.path.join(subdir, fname)
+
+    with open(fpath, "wb") as f:
+        f.write(content)
+    return fpath
+
+def build_github_raw_url(repo: str, branch: str, local_path: str) -> str:
+    """Build raw GitHub URL to the archived file."""
+    local_path = local_path.replace("\\", "/")
+    return f"https://raw.githubusercontent.com/{repo}/{branch}/{local_path}"
+
+# -------------------
 # Crawl logic
 # -------------------
 def crawl_seed(cur, competitor, line, url):
@@ -292,9 +333,9 @@ def crawl_seed(cur, competitor, line, url):
     change, _ = record_resource(cur, url, competitor, line, "html",
                                 headers, sha256_bytes(strip_main_text(html).encode("utf-8")), title)
     if change == "updated":
-        results.append({"competitor": competitor, "line": line, "url": url, "what": "Product page", "change": "updated", "old_url": None})
+        results.append({"competitor": competitor, "line": line, "url": url, "what": "Product page", "change": "updated", "old_url": None, "archived_path": None, "archived_url": None})
     elif change == "added":
-        results.append({"competitor": competitor, "line": line, "url": url, "what": "Product page", "change": "added", "old_url": None})
+        results.append({"competitor": competitor, "line": line, "url": url, "what": "Product page", "change": "added", "old_url": None, "archived_path": None, "archived_url": None})
 
     # Expand within same host
     host = urlparse(url).netloc
@@ -309,19 +350,39 @@ def crawl_seed(cur, competitor, line, url):
             if PDF_PATTERNS.search(href) or PDF_PATTERNS.search(text):
                 h = head(href)
                 dl_hash, dl_headers = (None, h)
-                # If no headers, get full for hash
                 if h is None or not (h.get("ETag") or h.get("Last-Modified")):
                     dl_hash, dl_headers = get_pdf_hash(href)
+
                 doc_kind = classify_pdf(href + " " + text)
                 if not doc_kind:
                     continue
+
                 change, prev_row = record_resource(cur, href, competitor, line, "pdf", dl_headers, dl_hash, text)
                 if change in ("added","updated"):
+                    # Download full PDF to archive it
+                    pdf_resp  = safe_request("GET", href)
+                    pdf_bytes = pdf_resp.content if pdf_resp else None
+                    disp_name = beautify_filename(href or text or "document.pdf")
+                    sha_now   = sha256_bytes(pdf_bytes) if pdf_bytes else (dl_hash or "")
+
+                    archived_path = None
+                    archived_url  = None
+                    if pdf_bytes:
+                        archived_path = archive_pdf(competitor, line, href, pdf_bytes, disp_name, sha_now)
+                        if GITHUB_REPOSITORY:
+                            archived_url = build_github_raw_url(GITHUB_REPOSITORY, GITHUB_REF_NAME, archived_path)
+
                     results.append({
-                        "competitor": competitor, "line": line, "url": href,
-                        "what": doc_kind, "change": change,
-                        "old_url": prev_row["url"] if (prev_row and change=="updated") else None
+                        "competitor": competitor,
+                        "line": line,
+                        "url": href,                 # new/current site URL
+                        "what": doc_kind,
+                        "change": change,
+                        "old_url": prev_row["url"] if (prev_row and change=="updated") else None,
+                        "archived_url": archived_url,   # stable link to *new* archived copy
+                        "archived_path": archived_path
                     })
+
         else:
             if looks_like_product_page(href):
                 ph, ph_headers = get_html(href)
@@ -330,7 +391,7 @@ def crawl_seed(cur, competitor, line, url):
                 content_hash = sha256_bytes(strip_main_text(ph).encode("utf-8"))
                 change, _ = record_resource(cur, href, competitor, line, "html", ph_headers, content_hash, ptitle)
                 if change in ("added","updated"):
-                    results.append({"competitor": competitor, "line": line, "url": href, "what": "Product page", "change": change, "old_url": None})
+                    results.append({"competitor": competitor, "line": line, "url": href, "what": "Product page", "change": change, "old_url": None, "archived_path": None, "archived_url": None})
     return results
 
 def crawl_all(cur):
@@ -344,42 +405,38 @@ def crawl_all(cur):
     return events
 
 # -------------------
-# Pivot for table
+# Pivot for table (C: include archived_url for updated PDFs)
 # -------------------
 def pivot_for_table(all_events):
     competitors = COMPETITOR_COLS[:]  # fixed order you provided
-    # Include unexpected names (very rare) at the end so we don't lose data
     extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
     competitors += [c for c in sorted(set(extras))]
 
-    # Table of updates
     table = {line: {c: [] for c in competitors} for line in LINES_ORDER}
-
-    # NA matrix based on urls.yaml
     na_map = build_na_map()
 
     for e in all_events:
         c, line, what, change = e["competitor"], e["line"], e["what"], e["change"]
         if what in ("Spec Sheet","Brochure"):
-            if change == "updated" and e.get("old_url"):
+            if change == "updated":
+                old_href  = e.get("archived_url") or e.get("old_url") or e["url"]
+                old_label = "Archived prior version" if e.get("archived_url") else "Old version"
                 label = (
                     f'{what} updated: '
                     f'{a(e["url"], beautify_filename(e["url"]))} '
-                    f'(old: {a(e["old_url"], beautify_filename(e["old_url"]))} '
-                    f'→ new: {a(e["url"], beautify_filename(e["url"]))})'
+                    f'(old: {a(old_href, old_label)} → new: {a(e["url"], beautify_filename(e["url"]))})'
                 )
             else:
                 label = f'{what} {change}: {a(e["url"], beautify_filename(e["url"]))}'
             table[line][c].append(label)
         elif what == "Product page":
-            # Use shortened, readable label while keeping full URL as href
             short = display_url_label(e["url"], max_len=60)
             label = f'Product page {change}: {a(e["url"], short)}'
             table[line][c].append(label)
     return competitors, table, na_map
 
 # -------------------
-# Map product line to inline icon (CID + local file path)  (for compose & senders)
+# Map product line to inline icon (CID + local file path)
 # -------------------
 def line_icon_name(line: str) -> tuple[str, str]:
     m = {
@@ -392,18 +449,16 @@ def line_icon_name(line: str) -> tuple[str, str]:
     return m.get(line, ("", ""))
 
 # -------------------
-# Email builder (table HTML) with shaded first column + icons + robust wrapping
+# Email builder (table HTML) with shaded first column + icon + robust wrapping
 # -------------------
-
 def compose_email(all_events):
     """
     Build the subject + HTML body:
     - Same fixed column width for every column (table-layout: fixed)
-    - Shade FIRST column (Product Line) same as header, and place a small icon on its own line above text
-    - Shade cells with updates using EMAIL_UPDATE_BG (e.g., #FFFFE0)
-    - Show 'N/A' when urls.yaml lists [] for that competitor+line
-    - Show 'No Update' when no events and the line is applicable
-    - Force wrap inside columns so bullets/URLs never bleed across columns
+    - Shade FIRST column same as header, show icon above product-line text with a hard <br>
+    - Shade cells with updates using EMAIL_UPDATE_BG
+    - Show 'N/A' if urls.yaml has [] for that competitor+line
+    - Wrap long bullets/URLs within each cell
     """
     if all_events:
         comps = sorted({e["competitor"] for e in all_events})
@@ -413,11 +468,10 @@ def compose_email(all_events):
 
     competitors, table, na_map = pivot_for_table(all_events)
 
-    # CSS snippets that force wrapping (incl. Outlook)
     wrap_css = (
-        "white-space: normal; "     # allow wrapping
-        "word-break: break-word; "  # break long tokens/URLs if needed
-        "overflow-wrap: anywhere;"  # allow break anywhere for extreme tokens
+        "white-space: normal; "
+        "word-break: break-word; "
+        "overflow-wrap: anywhere;"
     )
     li_style = f"{wrap_css} margin:0 0 4px 0;"
     ul_style = f"margin:0 0 0 17px; padding-left:0; list-style-position: outside; {wrap_css}"
@@ -445,13 +499,13 @@ def compose_email(all_events):
     for line in LINES_ORDER:
         html.append("<tr>")
 
-        # First column: shaded + icon (on its own line) + line name
+        # First column: shaded + icon above text + hard line break
         cid, _ = line_icon_name(line)
-        icon_html = f"cid:{cid}" if cid else ""
+        icon_html = f"<img src='cid:{cid}' width='48' height='48' style='display:block;margin:0 0 6px 0;' alt='{line}'>" if cid else ""
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
-            f"{icon_html}<br>{line}"
+            f"{icon_html}{line}"
             f"</td>"
         )
 
@@ -459,7 +513,6 @@ def compose_email(all_events):
         for c in competitors:
             items = table[line].get(c, [])
 
-            # Per-cell style: fixed width + wrap + optional highlight
             cell_style = f"width:{EMAIL_COL_WIDTH}; {wrap_css}"
             if items:
                 cell_style += f" background:{EMAIL_UPDATE_BG};"
@@ -481,7 +534,7 @@ def compose_email(all_events):
     return subject, "\n".join(html)
 
 # -------------------
-# Constants & settings (senders)
+# Senders
 # -------------------
 SEND_MODE = os.getenv("SEND_MODE", "GRAPH")  # GRAPH or SMTP
 MAIL_TO   = os.getenv("MAIL_TO", "jaehan.kim@itwfeg.com")
@@ -498,9 +551,6 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 
-# -------------------
-# Senders
-# -------------------
 def _build_inline_attachments_for_lines() -> list[dict]:
     """
     Build Microsoft Graph inline fileAttachment objects for any icons that exist in ./assets.
@@ -515,7 +565,7 @@ def _build_inline_attachments_for_lines() -> list[dict]:
         attachments.append({
             "@odata.type": "#microsoft.graph.fileAttachment",
             "name": cid,                  # attachment filename
-            "contentId": cid,             # must match 'cid:cid' in the HTML <img>
+            "contentId": cid,             # must match cid in <img src='cid:...'>
             "isInline": True,             # inline display
             "contentBytes": base64.b64encode(data).decode("utf-8"),
             "contentType": "image/png"
@@ -534,7 +584,6 @@ def send_via_graph(subject, html_body):
     r.raise_for_status()
     access_token = r.json()["access_token"]
 
-    # Build inline attachments for product-line icons (if files exist)
     inline_attachments = _build_inline_attachments_for_lines()
 
     send_url = f"https://graph.microsoft.com/v1.0/users/{MAIL_FROM}/sendMail"
@@ -569,6 +618,33 @@ def send_via_smtp(subject, html_body):
         s.sendmail(MAIL_FROM, [a.strip() for a in MAIL_TO.split(",") if a.strip()], msg.as_string())
 
 # -------------------
+# Git commit & push for archives (D)
+# -------------------
+def git_commit_and_push(paths: list[str], message: str = "chore: archive updated PDFs"):
+    """
+    Commit and push the given files to the current branch (uses GITHUB_TOKEN in Actions).
+    No-op if 'paths' is empty or running outside GitHub Actions without creds.
+    """
+    if not paths:
+        return
+    if not os.getenv("GITHUB_ACTIONS"):
+        # local dev: skip auto-commit to avoid unintended pushes
+        print("[ARCHIVE] Skipping git push (not in GitHub Actions). Files saved locally:")
+        for p in paths:
+            print(" -", p)
+        return
+
+    # Configure git identity
+    os.system('git config user.email "actions@github.com"')
+    os.system('git config user.name "github-actions[bot]"')
+
+    # Add files and commit/push
+    for p in paths:
+        os.system(f'git add "{p}"')
+    os.system(f'git commit -m "{message}" || echo "Nothing to commit"')
+    os.system('git push || echo "Push failed (check workflow permissions)"')
+
+# -------------------
 # Preview Test
 # -------------------
 def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
@@ -589,15 +665,15 @@ def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
 
 def sample_events_for_preview():
     return [
-        {"competitor":"Champion","line":"Rack Conveyor","url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.09-2025.pdf","what":"Spec Sheet","change":"updated","old_url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.08-2025.pdf"},
-        {"competitor":"Jackson","line":"Rack Conveyor","url":"https://www.jacksonwws.com/wp-content/uploads/2026/02/RackStar_66_ER_brochure.pdf","what":"Brochure","change":"added","old_url":None},
-        {"competitor":"CMA","line":"Door Type","url":"https://cmadishmachines.com/product/model-180-straight/","what":"Product page","change":"updated","old_url":None},
-        {"competitor":"Meiko","line":"Undercounter","url":"https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers/fv-402-g","what":"Product page","change":"added","old_url":None},
-        {"competitor":"Douglas","line":"Prep Washer","url":"https://www.dougmac.com/wp-content/uploads/2024/08/Product-Sheet-Bucket-Pan-Washer.pdf","what":"Brochure","change":"added","old_url":None},
-        {"competitor":"LVO","line":"Prep Washer","url":"https://www.lvomfg.com/site/product/fl36/","what":"Product page","change":"updated","old_url":None},
-        {"competitor":"ADS","line":"Door Type","url":"https://www.americandish.com/product/upright-dish-machine-af-afc-es/","what":"Product page","change":"added","old_url":None},
-        {"competitor":"Moyer Diebel","line":"Undercounter","url":"https://moyerdiebel.com/content/specs/383HT_Spec_Sheet.pdf","what":"Spec Sheet","change":"added","old_url":None},
-        {"competitor":"Jackson","line":"Flight Type","url":"https://www.jacksonwws.com/products/flightstar/","what":"Product page","change":"updated","old_url":None},
+        {"competitor":"Champion","line":"Rack Conveyor","url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.09-2025.pdf","what":"Spec Sheet","change":"updated","old_url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.08-2025.pdf","archived_url":None,"archived_path":None},
+        {"competitor":"Jackson","line":"Rack Conveyor","url":"https://www.jacksonwws.com/wp-content/uploads/2026/02/RackStar_66_ER_brochure.pdf","what":"Brochure","change":"added","old_url":None,"archived_url":None,"archived_path":None},
+        {"competitor":"CMA","line":"Door Type","url":"https://cmadishmachines.com/product/model-180-straight/","what":"Product page","change":"updated","old_url":None,"archived_url":None,"archived_path":None},
+        {"competitor":"Meiko","line":"Undercounter","url":"https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers/fv-402-g","what":"Product page","change":"added","old_url":None,"archived_url":None,"archived_path":None},
+        {"competitor":"Douglas","line":"Prep Washer","url":"https://www.dougmac.com/wp-content/uploads/2024/08/Product-Sheet-Bucket-Pan-Washer.pdf","what":"Brochure","change":"added","old_url":None,"archived_url":None,"archived_path":None},
+        {"competitor":"LVO","line":"Prep Washer","url":"https://www.lvomfg.com/site/product/fl36/","what":"Product page","change":"updated","old_url":None,"archived_url":None,"archived_path":None},
+        {"competitor":"ADS","line":"Door Type","url":"https://www.americandish.com/product/upright-dish-machine-af-afc-es/","what":"Product page","change":"added","old_url":None,"archived_url":None,"archived_path":None},
+        {"competitor":"Moyer Diebel","line":"Undercounter","url":"https://moyerdiebel.com/content/specs/383HT_Spec_Sheet.pdf","what":"Spec Sheet","change":"added","old_url":None,"archived_url":None,"archived_path":None},
+        {"competitor":"Jackson","line":"Flight Type","url":"https://www.jacksonwws.com/products/flightstar/","what":"Product page","change":"updated","old_url":None,"archived_url":None,"archived_path":None},
     ]
 
 # -------------------
@@ -617,11 +693,16 @@ def main():
         all_events = crawl_all(cur)
         # Persist only real crawl events
         for e in all_events:
-            cur.execute("INSERT INTO events(ts, competitor, line, url, what, change) VALUES(?,?,?,?,?,?)",
-                        (datetime.now(timezone.utc).isoformat(), e["competitor"], e["line"], e["url"], e["what"], e["change"]))
+            cur.execute("INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url) VALUES(?,?,?,?,?,?,?,?)",
+                        (datetime.now(timezone.utc).isoformat(), e["competitor"], e["line"], e["url"], e["what"], e["change"], e.get("archived_path"), e.get("archived_url")))
         con.commit()
 
     subject, body = compose_email(all_events)
+
+    # Commit/push any archived PDFs we just saved (D)
+    archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
+    if archived_files:
+        git_commit_and_push(archived_files, "chore: archive PDFs for today")
 
     # Always write preview.html if SAMPLE mode or if test workflow asks for it explicitly
     if use_samples or force_preview:
