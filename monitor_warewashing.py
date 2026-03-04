@@ -631,12 +631,18 @@ def main():
         if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
             print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
             print("=== SUBJECT ==="); print(subject)
-            print("=== HTML BODY ==="); print(bodymode, just print
+            print("=== HTML BODY ==="); print(body)
+            return
+        # Real send via Graph
+        send_via_graph(subject, body)
+    else:
+        # SMTP fallback
         if use_samples:
             print("SAMPLE mode with SMTP selected—printing only.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
             return
+        # Real send via SMTP
         send_via_smtp(subject, body)
 
 # -------------------
