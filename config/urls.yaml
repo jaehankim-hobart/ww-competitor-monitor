@@ -1,0 +1,25 @@
+# Seed URLs per competitor. Update easily without touching Python code.
+
+Champion:
+  Door Type:
+    - https://www.championindustries.com/our-products/door-type/
+  Rack Conveyor:
+    - https://www.championindustries.com/44-PRO-Rack-Conveyor
+  Flight Type:
+    - https://www.championindustries.com/euccw-flight-pro-series-29-flight-conveyor-series/
+
+Jackson:
+  Door Type:
+    - https://www.jacksonwws.com/categories/door-type/
+  Rack Conveyor:
+    - https://www.jacksonwws.com/categories/conveyors-good-better-best/
+  Flight Type:
+    - https://www.jacksonwws.com/products/flightstar/
+
+Meiko:
+  Undercounter:
+    - https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers
+  Rack Conveyor:
+    - https://www.meiko.com/en-us/products/commercial-dishwashers/rack-conveyor-dishwashers
+  Flight Type:
+    - https://www.meiko.com/en-us/products/commercial-dishwashers/flight-type-dishwashers
