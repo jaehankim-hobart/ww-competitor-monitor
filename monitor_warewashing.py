@@ -458,7 +458,12 @@ def compose_email(all_events):
     # Rows
     for line in LINES_ORDER:
         html.append("<tr>")
-        html.append(f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css}'>{line}</td>")
+        html.append(
+            f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
+            f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px;'>"
+            f"{line}"
+            f"</td>"
+        )
 
         for c in competitors:
             items = table[line].get(c, [])
