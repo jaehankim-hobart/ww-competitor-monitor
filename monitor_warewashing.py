@@ -444,15 +444,16 @@ def compose_email(all_events):
     for line in LINES_ORDER:
         html.append("<tr>")
 
-    # First column: shaded + icon + line name
-    cid, _ = line_icon_name(line)
-    icon_html = f"cid:{cid}" if cid else ""
-    html.append(
-        f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
-        f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
-        f"{icon_html}<br>{line}"
-        f"</td>"
-    )
+# First column: shaded + icon (on its own line) + line name
+cid, _ = line_icon_name(line)
+icon_html = f"cid:{cid}" if cid else ""
+html.append(
+    f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
+    f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
+    f"{icon_html}<br>{line}"
+    f"</td>"
+)
+
 
 
         # Competitor cells
