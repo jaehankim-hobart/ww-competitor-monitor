@@ -508,30 +508,6 @@ def send_via_smtp(subject, html_body):
         s.sendmail(MAIL_FROM, [a.strip() for a in MAIL_TO.split(",") if a.strip()], msg.as_string())
 
 
-def sample_events_for_preview():
-    # Simulated events that exercise different lines/competitors
-    return [
-        # Rack Conveyor – Champion spec sheet updated
-        {"competitor":"Champion","line":"Rack Conveyor","url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.09-2025.pdf","what":"Spec Sheet","change":"updated","old_url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.08-2025.pdf"},
-        # Rack Conveyor – Jackson brochure added
-        {"competitor":"Jackson","line":"Rack Conveyor","url":"https://www.jacksonwws.com/wp-content/uploads/2026/02/RackStar_66_ER_brochure.pdf","what":"Brochure","change":"added","old_url":None},
-        # Door Type – CMA product page updated
-        {"competitor":"CMA","line":"Door Type","url":"https://cmadishmachines.com/product/model-180-straight/","what":"Product page","change":"updated","old_url":None},
-        # Undercounter – Meiko product page added
-        {"competitor":"Meiko","line":"Undercounter","url":"https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers/fv-402-g","what":"Product page","change":"added","old_url":None},
-        # Prep Washer – Douglas brochure added
-        {"competitor":"Douglas","line":"Prep Washer","url":"https://www.dougmac.com/wp-content/uploads/2024/08/Product-Sheet-Bucket-Pan-Washer.pdf","what":"Brochure","change":"added","old_url":None},
-        # Prep Washer – LVO product page updated
-        {"competitor":"LVO","line":"Prep Washer","url":"https://www.lvomfg.com/site/product/fl36/","what":"Product page","change":"updated","old_url":None},
-        # Door Type – ADS product page added
-        {"competitor":"ADS","line":"Door Type","url":"https://www.americandish.com/product/upright-dish-machine-af-afc-es/","what":"Product page","change":"added","old_url":None},
-        # Undercounter – Moyer Diebel spec sheet added
-        {"competitor":"Moyer Diebel","line":"Undercounter","url":"https://moyerdiebel.com/content/specs/383HT_Spec_Sheet.pdf","what":"Spec Sheet","change":"added","old_url":None},
-        # Flight Type – Jackson product page updated
-        {"competitor":"Jackson","line":"Flight Type","url":"https://www.jacksonwws.com/products/flightstar/","what":"Product page","change":"updated","old_url":None},
-    ]
-
-
 # -------------------
 # Preview Test
 # -------------------
@@ -552,20 +528,34 @@ def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
         f.write(html)
     print(f"[TEST MODE] Wrote {fname} with rendered email HTML.")
 
+
+def sample_events_for_preview():
+    return [
+        {"competitor":"Champion","line":"Rack Conveyor","url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.09-2025.pdf","what":"Spec Sheet","change":"updated","old_url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.08-2025.pdf"},
+        {"competitor":"Jackson","line":"Rack Conveyor","url":"https://www.jacksonwws.com/wp-content/uploads/2026/02/RackStar_66_ER_brochure.pdf","what":"Brochure","change":"added","old_url":None},
+        {"competitor":"CMA","line":"Door Type","url":"https://cmadishmachines.com/product/model-180-straight/","what":"Product page","change":"updated","old_url":None},
+        {"competitor":"Meiko","line":"Undercounter","url":"https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers/fv-402-g","what":"Product page","change":"added","old_url":None},
+        {"competitor":"Douglas","line":"Prep Washer","url":"https://www.dougmac.com/wp-content/uploads/2024/08/Product-Sheet-Bucket-Pan-Washer.pdf","what":"Brochure","change":"added","old_url":None},
+        {"competitor":"LVO","line":"Prep Washer","url":"https://www.lvomfg.com/site/product/fl36/","what":"Product page","change":"updated","old_url":None},
+        {"competitor":"ADS","line":"Door Type","url":"https://www.americandish.com/product/upright-dish-machine-af-afc-es/","what":"Product page","change":"added","old_url":None},
+        {"competitor":"Moyer Diebel","line":"Undercounter","url":"https://moyerdiebel.com/content/specs/383HT_Spec_Sheet.pdf","what":"Spec Sheet","change":"added","old_url":None},
+        {"competitor":"Jackson","line":"Flight Type","url":"https://www.jacksonwws.com/products/flightstar/","what":"Product page","change":"updated","old_url":None},
+    ]
+
 # -------------------
 # Main
 # -------------------
-
 
 def main():
     con = init_db()
     cur = con.cursor()
 
     use_samples = os.getenv("SAMPLE_EVENTS") == "1"
-    print(f"[DEBUG] SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} -> use_samples={use_samples}")
+    force_preview = os.getenv("WRITE_PREVIEW") == "1"
+    print(f"[DEBUG] SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} use_samples={use_samples} WRITE_PREVIEW={os.getenv('WRITE_PREVIEW')} force_preview={force_preview}")
 
     if use_samples:
-        all_events = sample_events_for_preview()
+        all_events = sample_events_for_preview()  # <-- make sure this function exists above main()
     else:
         all_events = crawl_all(cur)
         # Persist only real crawl events
@@ -576,8 +566,8 @@ def main():
 
     subject, body = compose_email(all_events)
 
-    # ✨ NEW: Always write preview.html EARLY when in SAMPLE mode
-    if use_samples:
+    # Always write preview.html if SAMPLE mode or if test workflow asks for it explicitly
+    if use_samples or force_preview:
         write_preview_file(subject, body, "preview.html")
 
     if SEND_MODE.upper() == "GRAPH":
@@ -596,5 +586,6 @@ def main():
             print("=== HTML BODY ==="); print(body)
             return
         send_via_smtp(subject, body)
+
 
 
