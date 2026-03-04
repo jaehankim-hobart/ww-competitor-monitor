@@ -1,3 +1,4 @@
+
 # monitor_warewashing.py
 # Python 3.11+
 # Features:
@@ -631,3 +632,15 @@ def main():
             print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(bodymode, just print
+        if use_samples:
+            print("SAMPLE mode with SMTP selected—printing only.")
+            print("=== SUBJECT ==="); print(subject)
+            print("=== HTML BODY ==="); print(body)
+            return
+        send_via_smtp(subject, body)
+
+# -------------------
+# Entry point
+# -------------------
+if __name__ == "__main__":
+    main()
