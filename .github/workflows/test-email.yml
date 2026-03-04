@@ -28,25 +28,27 @@ jobs:
           GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
           GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
           SAMPLE_EVENTS: "1"
+          WRITE_PREVIEW: "1"     # <<< new: always request preview file
         run: |
-          set +e  # do NOT stop the job if python returns non-zero
+          set +e  # do NOT stop job if python non-zero
           python monitor_warewashing.py | tee monitor_output.txt
           echo "Python exit code: $?"
-          # If preview.html not created, try to build it from logs as a fallback
+          ls -la || true
           if [ ! -s preview.html ]; then
-            echo "preview.html not found — attempting to extract from logs"
+            echo "WARNING: preview.html missing or empty — attempting to extract from logs"
             awk '/=== HTML BODY ===/{flag=1;next} flag{print}' monitor_output.txt > preview.html
           fi
-          # At this point, preview.html may still be empty if script produced no HTML.
           if [ -s preview.html ]; then
             echo "preview.html ready"
           else
-            echo "WARNING: preview.html is empty. Check logs for HTML markers."
+            echo "WARNING: preview.html is still empty. Check monitor_output.txt for details."
           fi
 
-      - name: Upload preview artifact (always run)
+      - name: Upload artifacts (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ww-monitor-preview
-          path: preview.html
+          name: ww-monitor-test-artifacts
+          path: |
+            preview.html
+            monitor_output.txt
