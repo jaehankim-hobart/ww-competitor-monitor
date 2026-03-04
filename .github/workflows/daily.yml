@@ -1,45 +1,53 @@
+
 name: WW Daily Monitor (7AM ET)
 
 on:
   schedule:
-    - cron: "0 12 * * 1-5"   # 7 AM ET during Standard Time (EST = UTC-5)
-    - cron: "0 11 * * 1-5"   # 7 AM ET during Daylight Time (EDT = UTC-4)
-  workflow_dispatch: {}
+    # 7:00 AM US/Eastern on weekdays (GitHub uses UTC; 12:00 UTC = 7:00 ET during Standard Time)
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch: {}   # allow manual runs too
+
+# Must have write permissions so the job can push archived PDFs
+permissions:
+  contents: write
 
 jobs:
   run:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      # ⬇️ Checkout FIRST, with full history and credentials.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: pip install requests beautifulsoup4 lxml pyyaml pytz
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 lxml pyyaml
 
-    - name: Time guard (7:00–7:05 ET)
-      run: |
-        python - << 'PY'
-        from datetime import datetime
-        import pytz, sys
-        tz = pytz.timezone("America/New_York")
-        now = datetime.now(tz)
-        if not (now.hour == 7 and now.minute < 5):
-            print(f"Skipping run at {now.isoformat()}: not within 7:00–7:05 ET.")
-            sys.exit(0)
-        PY
+      - name: Run competitor monitor (real crawl & send or print)
+        env:
+          SEND_MODE: GRAPH
+          MAIL_FROM: "ww-monitor@itwfeg.com"
+          MAIL_TO: "jaehan.kim@itwfeg.com"
+          GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
+          GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+          # Optional (defaults shown):
+          # ARCHIVE_DIR: "archive"
+        run: |
+          set -e
+          python monitor_warewashing.py
 
-    - name: Run competitor monitor
-      env:
-        SEND_MODE: GRAPH
-        MAIL_FROM: "ww-monitor@itwfeg.com"
-        MAIL_TO: "jaehan.kim@itwfeg.com"
-        GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
-        GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
-        GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
-      run: python monitor_warewashing.py
+      - name: Upload archived PDFs (for convenience)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-monitor-archives
+          path: archive/**/*
+          if-no-files-found: ignore
