@@ -1,11 +1,9 @@
-
 # monitor_warewashing.py
 # Python 3.11+
 # Features:
 # - Loads config from ./config/*.yaml
 # - Crawls category and product pages, detects material changes (content hash)
 # - Monitors only Spec/Data Sheet & Brochure PDFs; ignores manuals/others
-# - Emits events with old→new links for updated PDFs
 # - Beautifies PDF file names for email display
 # - Builds a 5×N HTML table (rows = product lines; columns = fixed competitor order)
 # - Shades FIRST column (Product Line) same as header and shows a small icon (CID)
@@ -13,6 +11,7 @@
 # - Sends via Microsoft Graph (client credentials), attaches icons inline
 # - SQLite state to remember previous hashes/headers
 # - Sample mode & preview.html writer for test workflow
+# - Bootstrap mode to archive ALL PDFs once and exit (no email)
 
 import os, re, sys, sqlite3, hashlib, json, time, base64
 from datetime import datetime, timezone
@@ -59,11 +58,12 @@ EMAIL_COL_WIDTH   = EMAIL_STYLE.get("column_width", "180px")  # same width for a
 EMAIL_UPDATE_BG   = EMAIL_STYLE.get("update_bg", "#FFFFE0")   # cells with updates
 
 # -------------------
-# Archiving configuration (A)
+# Archiving configuration
 # -------------------
 ARCHIVE_DIR        = os.getenv("ARCHIVE_DIR", "archive")
 GITHUB_REPOSITORY  = os.getenv("GITHUB_REPOSITORY", "")   # e.g., "jaehankim-hobart/ww-competitor-monitor"
-GITHUB_REF_NAME    = os.getenv("GITHUB_REF_NAME", "main") # branch name
+GITHUB_REF_NAME    = os.getenv("GITHUB_REF_NAME", "main") # branch name (Actions sets this)
+BOOTSTRAP          = os.getenv("BOOTSTRAP_ARCHIVE") == "1"
 
 # -------------------
 # Build an N/A matrix
@@ -235,7 +235,7 @@ def safe_request(method, url):
     except Exception:
         return None
 
-def sha256_bytes(b):
+def sha256_bytes(b: bytes) -> str:
     h = hashlib.sha256(); h.update(b); return h.hexdigest()
 
 def get_html(url):
@@ -289,7 +289,7 @@ def infer_line_from_path(url):
     return "Unknown"
 
 # -------------------
-# Archiving helpers (B)
+# Archiving helpers
 # -------------------
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
@@ -405,7 +405,7 @@ def crawl_all(cur):
     return events
 
 # -------------------
-# Pivot for table (C: include archived_url for updated PDFs)
+# Pivot for table
 # -------------------
 def pivot_for_table(all_events):
     competitors = COMPETITOR_COLS[:]  # fixed order you provided
@@ -501,7 +501,7 @@ def compose_email(all_events):
 
         # First column: shaded + icon above text + hard line break
         cid, _ = line_icon_name(line)
-        icon_html = f"<img src='cid:{cid}' width='48' height='48' style='display:block;margin:0 0 6px 0;' alt='{line}'>" if cid else ""
+        icon_html = f'cid:{cid}<br>' if cid else ""
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
@@ -565,7 +565,7 @@ def _build_inline_attachments_for_lines() -> list[dict]:
         attachments.append({
             "@odata.type": "#microsoft.graph.fileAttachment",
             "name": cid,                  # attachment filename
-            "contentId": cid,             # must match cid in <img src='cid:...'>
+            "contentId": cid,             # must match cid in cid:...
             "isInline": True,             # inline display
             "contentBytes": base64.b64encode(data).decode("utf-8"),
             "contentType": "image/png"
@@ -618,7 +618,7 @@ def send_via_smtp(subject, html_body):
         s.sendmail(MAIL_FROM, [a.strip() for a in MAIL_TO.split(",") if a.strip()], msg.as_string())
 
 # -------------------
-# Git commit & push for archives (D)
+# Git commit & push for archives
 # -------------------
 def git_commit_and_push(paths: list[str], message: str = "chore: archive updated PDFs"):
     """
@@ -634,11 +634,9 @@ def git_commit_and_push(paths: list[str], message: str = "chore: archive updated
             print(" -", p)
         return
 
-    # Configure git identity
     os.system('git config user.email "actions@github.com"')
     os.system('git config user.name "github-actions[bot]"')
 
-    # Add files and commit/push
     for p in paths:
         os.system(f'git add "{p}"')
     os.system(f'git commit -m "{message}" || echo "Nothing to commit"')
@@ -685,13 +683,28 @@ def main():
 
     use_samples   = os.getenv("SAMPLE_EVENTS") == "1"
     force_preview = os.getenv("WRITE_PREVIEW") == "1"
-    print(f"[DEBUG] SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} use_samples={use_samples} WRITE_PREVIEW={os.getenv('WRITE_PREVIEW')} force_preview={force_preview}")
+    print(f"[DEBUG] BOOTSTRAP_ARCHIVE={os.getenv('BOOTSTRAP_ARCHIVE')} SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} WRITE_PREVIEW={os.getenv('WRITE_PREVIEW')}")
 
+    # --- BOOTSTRAP: crawl & archive everything, push, and exit (no email) ---
+    if BOOTSTRAP and not use_samples:
+        print("[BOOTSTRAP] Starting full archive …")
+        all_events = crawl_all(cur)
+        # commit/push archived PDFs
+        archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
+        if archived_files:
+            git_commit_and_push(archived_files, "bootstrap: initial PDF archive")
+            print(f"[BOOTSTRAP] Archived and pushed {len(archived_files)} PDFs.")
+        else:
+            print("[BOOTSTRAP] No PDFs discovered to archive (check seeds).")
+        print("[BOOTSTRAP] Done. Exiting without sending email.")
+        return
+
+    # --- Daily / Sample runs ---
     if use_samples:
         all_events = sample_events_for_preview()
     else:
         all_events = crawl_all(cur)
-        # Persist only real crawl events
+        # Persist only real crawl events (not needed for sample)
         for e in all_events:
             cur.execute("INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url) VALUES(?,?,?,?,?,?,?,?)",
                         (datetime.now(timezone.utc).isoformat(), e["competitor"], e["line"], e["url"], e["what"], e["change"], e.get("archived_path"), e.get("archived_url")))
@@ -699,12 +712,12 @@ def main():
 
     subject, body = compose_email(all_events)
 
-    # Commit/push any archived PDFs we just saved (D)
+    # Commit/push any archived PDFs we just saved (daily runs)
     archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
     if archived_files:
         git_commit_and_push(archived_files, "chore: archive PDFs for today")
 
-    # Always write preview.html if SAMPLE mode or if test workflow asks for it explicitly
+    # Write preview in sample mode (for test workflow)
     if use_samples or force_preview:
         write_preview_file(subject, body, "preview.html")
 
