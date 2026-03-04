@@ -550,8 +550,7 @@ def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
 </html>"""
     with open(fname, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"[TEST MODE] Wrote {fname} with rendered email HTML.")
-
+    print(f"[TEST MODE] Wrote {fname} with rendered email HT
 
 
 # -------------------
@@ -564,10 +563,13 @@ def main():
     cur = con.cursor()
 
     use_samples = os.getenv("SAMPLE_EVENTS") == "1"
+    print(f"[DEBUG] SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} -> use_samples={use_samples}")
+
     if use_samples:
         all_events = sample_events_for_preview()
     else:
         all_events = crawl_all(cur)
+        # Persist only real crawl events
         for e in all_events:
             cur.execute("INSERT INTO events(ts, competitor, line, url, what, change) VALUES(?,?,?,?,?,?)",
                         (datetime.now(timezone.utc).isoformat(), e["competitor"], e["line"], e["url"], e["what"], e["change"]))
@@ -575,14 +577,16 @@ def main():
 
     subject, body = compose_email(all_events)
 
+    # ✨ NEW: Always write preview.html EARLY when in SAMPLE mode
+    if use_samples:
+        write_preview_file(subject, body, "preview.html")
+
     if SEND_MODE.upper() == "GRAPH":
         # With no credentials or in SAMPLE mode, just print (no send)
         if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
             print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
-            if use_samples:
-                write_preview_file(subject, body, "preview.html")  # <<< ensure we write the file
             return
         send_via_graph(subject, body)
     else:
@@ -591,9 +595,7 @@ def main():
             print("SAMPLE mode with SMTP selected—printing only.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
-            write_preview_file(subject, body, "preview.html")      # <<< ensure we write the file
             return
         send_via_smtp(subject, body)
-
 
 
