@@ -38,7 +38,7 @@ DEFAULT_LINES = ["Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "F
 COMPETITOR_COLS = COMP_CONF.get("competitors", DEFAULT_COMPETITORS)
 LINES_ORDER     = COMP_CONF.get("lines", DEFAULT_LINES)
 
-DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Typ
+DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
 
 
 # -------------------
