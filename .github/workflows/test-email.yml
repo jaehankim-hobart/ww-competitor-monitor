@@ -1,17 +1,25 @@
+
 name: WW Monitor – Test Email (Sample Events)
 
 on:
-  workflow_dispatch: {}   # run manually
+  workflow_dispatch: {}   # run manually from the Actions tab
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install requests beautifulsoup4 lxml pyyaml
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 lxml pyyaml
+
+      # (1) Run and capture stdout to a file
       - name: Run monitor in SAMPLE mode (no send)
         env:
           SEND_MODE: GRAPH
@@ -20,5 +28,22 @@ jobs:
           GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
           GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
           GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
-          SAMPLE_EVENTS: "1"    # << enable simulated events
-        run: python monitor_warewashing.py
+          SAMPLE_EVENTS: "1"
+        run: |
+          set -e
+          python monitor_warewashing.py | tee monitor_output.txt
+
+      # (2) Extract HTML body into preview.html
+      - name: Build preview.html from output
+        run: |
+          awk '/=== HTML BODY ===/{flag=1;next} flag{print}' monitor_output.txt > preview.html
+          echo "Wrote preview.html"
+          # Optional: show the first 10 lines for a quick sanity check
+          head -n 10 preview.html || true
+
+      # (3) Upload the preview as an artifact for download
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-monitor-preview
+          path: preview.html
