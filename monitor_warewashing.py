@@ -1,4 +1,3 @@
-
 # monitor_warewashing.py
 # Python 3.11+
 # Features:
@@ -8,11 +7,12 @@
 # - Emits events with old→new links for updated PDFs
 # - Beautifies PDF file names for email display
 # - Builds a 5×N HTML table (rows = product lines; columns = fixed competitor order)
-# - Sends email via Microsoft Graph using app (client credentials)
+# - Shades FIRST column (Product Line) same as header and shows a small icon
+# - Sends email via Microsoft Graph using app (client credentials), with inline icons
 # - SQLite state to remember previous hashes/headers
 # - Sample mode & preview.html writer for test workflow
 
-import os, re, sys, sqlite3, hashlib, json, time
+import os, re, sys, sqlite3, hashlib, json, time, base64
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse, unquote
 import requests
@@ -31,7 +31,7 @@ COMP_CONF  = load_yaml(os.path.join(CONFIG_DIR, "competitors.yaml"))
 URLS_CONF  = load_yaml(os.path.join(CONFIG_DIR, "urls.yaml"))
 STYLE_CONF = load_yaml(os.path.join(CONFIG_DIR, "styling.yaml"))
 
-# Safe fallbacks in case keys are missing from competitors.yaml
+# Safe fallbacks if keys are missing from competitors.yaml
 DEFAULT_COMPETITORS = [
     "Champion", "Jackson", "Meiko", "CMA", "Noble", "ADS", "Moyer Diebel", "Douglas", "LVO"
 ]
@@ -45,16 +45,16 @@ DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "R
 # -------------------
 # Email styling defaults (in case keys are missing)
 # -------------------
-EMAIL_STYLE = STYLE_CONF.get("email", {})
-EMAIL_FONT_FAMILY = EMAIL_STYLE.get("font_family", "Segoe UI, Arial, sans-serif")
-EMAIL_FONT_SIZE   = EMAIL_STYLE.get("font_size", "14px")
-EMAIL_HEADER_BG   = EMAIL_STYLE.get("header_bg", "#f3f3f3")
-EMAIL_HEADER_FG   = EMAIL_STYLE.get("header_fg", "#000000")
-EMAIL_BODY_BG     = EMAIL_STYLE.get("body_bg", "#ffffff")
-EMAIL_BORDER_CLR  = EMAIL_STYLE.get("border_color", "#dddddd")
-EMAIL_CELL_PAD    = EMAIL_STYLE.get("cell_padding", "6")
-EMAIL_COL_WIDTH   = EMAIL_STYLE.get("column_width", "180px")  # same width for all columns
-EMAIL_UPDATE_BG   = EMAIL_STYLE.get("update_bg", "#FFFFE0")   # cells with updates
+EMAIL_STYLE      = STYLE_CONF.get("email", {})
+EMAIL_FONT_FAMILY= EMAIL_STYLE.get("font_family", "Segoe UI, Arial, sans-serif")
+EMAIL_FONT_SIZE  = EMAIL_STYLE.get("font_size", "14px")
+EMAIL_HEADER_BG  = EMAIL_STYLE.get("header_bg", "#f3f3f3")
+EMAIL_HEADER_FG  = EMAIL_STYLE.get("header_fg", "#000000")
+EMAIL_BODY_BG    = EMAIL_STYLE.get("body_bg",   "#ffffff")
+EMAIL_BORDER_CLR = EMAIL_STYLE.get("border_color", "#dddddd")
+EMAIL_CELL_PAD   = EMAIL_STYLE.get("cell_padding", "6")
+EMAIL_COL_WIDTH  = EMAIL_STYLE.get("column_width", "180px")  # same width for all columns
+EMAIL_UPDATE_BG  = EMAIL_STYLE.get("update_bg", "#FFFFE0")   # cells with updates
 
 # -------------------
 # Build an N/A matrix
@@ -74,11 +74,10 @@ def build_na_map():
     return na
 
 # -------------------
-# HTML helper
+# HTML helper (real <a> tag)
 # -------------------
 def a(href: str, label: str) -> str:
-    """HTML anchor helper (real tag)."""
-    return f'{href}{label}</a>'
+    return f'<a href="{href}">{label}</a>'
 
 # -------------------
 # Label helpers
@@ -95,10 +94,8 @@ def display_url_label(href: str, max_len: int = 60) -> str:
         if last:
             label = f"{u.netloc}/{last}"
         else:
-            # e.g., homepage or no path
             label = u.netloc or href
         label = unquote(label)
-        # So it's readable but still recognizable
         label = re.sub(r"[_\-]+", " ", label).strip()
         if len(label) > max_len:
             keep = max_len // 2 - 1
@@ -143,6 +140,8 @@ def classify_pdf(text_or_url):
 # -------------------
 # DB helpers
 # -------------------
+DB_PATH = os.getenv("STATE_DB", "state.db")
+
 def init_db():
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
@@ -209,32 +208,11 @@ def record_resource(cur, url, competitor, line, kind, headers, content_hash, tit
             return None, prev_row
 
 # -------------------
-# Constants & settings
+# HTTP helpers
 # -------------------
 REQUEST_TIMEOUT = 25
 HEADERS = {"User-Agent": "WW-Competitor-Monitor/1.0 (+market intel; contact: ww-monitor@itwfeg.com)"}
-DB_PATH = os.getenv("STATE_DB", "state.db")
 
-SEND_MODE = os.getenv("SEND_MODE", "GRAPH")  # GRAPH or SMTP
-MAIL_TO = os.getenv("MAIL_TO", "jaehan.kim@itwfeg.com")
-MAIL_FROM = os.getenv("MAIL_FROM", "ww-monitor@itwfeg.com")
-
-# Graph (app creds)
-GRAPH_TENANT = os.getenv("GRAPH_TENANT_ID", "")
-GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID", "")
-GRAPH_CLIENT_SECRET = os.getenv("GRAPH_CLIENT_SECRET", "")
-
-# SMTP (optional fallback)
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-
-PDF_PATTERNS = re.compile(r"(spec(ification)?\s*sheet|data\s*sheet|datasheet|brochure|sales\s*sheet)", re.I)
-
-# -------------------
-# HTTP helpers
-# -------------------
 session = requests.Session()
 session.headers.update(HEADERS)
 
@@ -310,17 +288,12 @@ def crawl_seed(cur, competitor, line, url):
     title, links = extract_links(html, url)
 
     # Record the hub/category page itself — product page updates count as events.
-    change, _ = record_resource(cur, url, competitor, line, "html", headers, sha256_bytes(strip_main_text(html).encode("utf-8")), title)
+    change, _ = record_resource(cur, url, competitor, line, "html",
+                                headers, sha256_bytes(strip_main_text(html).encode("utf-8")), title)
     if change == "updated":
-        results.append({
-            "competitor": competitor, "line": line, "url": url,
-            "what": "Product page", "change": "updated", "old_url": None
-        })
+        results.append({"competitor": competitor, "line": line, "url": url, "what": "Product page", "change": "updated", "old_url": None})
     elif change == "added":
-        results.append({
-            "competitor": competitor, "line": line, "url": url,
-            "what": "Product page", "change": "added", "old_url": None
-        })
+        results.append({"competitor": competitor, "line": line, "url": url, "what": "Product page", "change": "added", "old_url": None})
 
     # Expand within same host
     host = urlparse(url).netloc
@@ -356,10 +329,7 @@ def crawl_seed(cur, competitor, line, url):
                 content_hash = sha256_bytes(strip_main_text(ph).encode("utf-8"))
                 change, _ = record_resource(cur, href, competitor, line, "html", ph_headers, content_hash, ptitle)
                 if change in ("added","updated"):
-                    results.append({
-                        "competitor": competitor, "line": line,
-                        "url": href, "what": "Product page", "change": change, "old_url": None
-                    })
+                    results.append({"competitor": competitor, "line": line, "url": href, "what": "Product page", "change": change, "old_url": None})
     return results
 
 def crawl_all(cur):
@@ -408,13 +378,27 @@ def pivot_for_table(all_events):
     return competitors, table, na_map
 
 # -------------------
-# Email builder (table HTML) with robust wrapping
+# Map product line to inline icon (CID + local file path)  (for compose & senders)
+# -------------------
+def line_icon_name(line: str) -> tuple[str, str]:
+    m = {
+        "Door Type":      ("doortype.png",     os.path.join("assets", "doortype.png")),
+        "Undercounter":   ("undercounter.png", os.path.join("assets", "undercounter.png")),
+        "Prep Washer":    ("prepwasher.png",   os.path.join("assets", "prepwasher.png")),
+        "Rack Conveyor":  ("rackconveyor.png", os.path.join("assets", "rackconveyor.png")),
+        "Flight Type":    ("flighttype.png",   os.path.join("assets", "flighttype.png")),
+    }
+    return m.get(line, ("", ""))
+
+# -------------------
+# Email builder (table HTML) with shaded first column + icons + robust wrapping
 # -------------------
 def compose_email(all_events):
     """
     Build the subject + HTML body:
     - Same fixed column width for every column (table-layout: fixed)
-    - Shade cells with updates using #FFFFE0
+    - Shade FIRST column (Product Line) same as header, and place a small icon before text
+    - Shade cells with updates using EMAIL_UPDATE_BG (e.g., #FFFFE0)
     - Show 'N/A' when urls.yaml lists [] for that competitor+line
     - Show 'No Update' when no events and the line is applicable
     - Force wrap inside columns so bullets/URLs never bleed across columns
@@ -427,7 +411,7 @@ def compose_email(all_events):
 
     competitors, table, na_map = pivot_for_table(all_events)
 
-    # CSS snippets that force wrapping in picky email clients (incl. Outlook)
+    # CSS snippets that force wrapping (incl. Outlook)
     wrap_css = (
         "white-space: normal; "     # allow wrapping
         "word-break: break-word; "  # break long tokens/URLs if needed
@@ -446,7 +430,7 @@ def compose_email(all_events):
         f"style='border-collapse:collapse; width:100%; border-color:{EMAIL_BORDER_CLR}; table-layout:fixed;'>"
     )
 
-    # Header row (every column same width, including Product Line)
+    # Header row
     html.append("<thead><tr>")
     for col in (["Product Line"] + competitors):
         html.append(
@@ -458,13 +442,18 @@ def compose_email(all_events):
     # Rows
     for line in LINES_ORDER:
         html.append("<tr>")
+
+        # First column: shaded + icon + line name
+        cid, _ = line_icon_name(line)
+        icon_tag = f"<img src='cid:{cid}' width='48' height='48' style='vertical-align:middle; margin-right:8px;' alt='{line} icon' />" if cid else ""
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px;'>"
-            f"{line}"
+            f"{icon_tag}{line}"
             f"</td>"
         )
 
+        # Competitor cells
         for c in competitors:
             items = table[line].get(c, [])
 
@@ -490,8 +479,47 @@ def compose_email(all_events):
     return subject, "\n".join(html)
 
 # -------------------
+# Constants & settings (senders)
+# -------------------
+SEND_MODE = os.getenv("SEND_MODE", "GRAPH")  # GRAPH or SMTP
+MAIL_TO   = os.getenv("MAIL_TO", "jaehan.kim@itwfeg.com")
+MAIL_FROM = os.getenv("MAIL_FROM", "ww-monitor@itwfeg.com")
+
+# Graph (app creds)
+GRAPH_TENANT        = os.getenv("GRAPH_TENANT_ID", "")
+GRAPH_CLIENT_ID     = os.getenv("GRAPH_CLIENT_ID", "")
+GRAPH_CLIENT_SECRET = os.getenv("GRAPH_CLIENT_SECRET", "")
+
+# SMTP (optional fallback)
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+
+# -------------------
 # Senders
 # -------------------
+def _build_inline_attachments_for_lines() -> list[dict]:
+    """
+    Build Microsoft Graph inline fileAttachment objects for any icons that exist in ./assets.
+    """
+    attachments = []
+    for line in LINES_ORDER:
+        cid, path = line_icon_name(line)
+        if not cid or not path or not os.path.exists(path):
+            continue
+        with open(path, "rb") as f:
+            data = f.read()
+        attachments.append({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": cid,                  # attachment filename
+            "contentId": cid,             # must match 'cid:cid' in the HTML <img>
+            "isInline": True,             # inline display
+            "contentBytes": base64.b64encode(data).decode("utf-8"),
+            "contentType": "image/png"
+        })
+    return attachments
+
 def send_via_graph(subject, html_body):
     token_url = f"https://login.microsoftonline.com/{GRAPH_TENANT}/oauth2/v2.0/token"
     data = {
@@ -503,6 +531,10 @@ def send_via_graph(subject, html_body):
     r = requests.post(token_url, data=data, timeout=20)
     r.raise_for_status()
     access_token = r.json()["access_token"]
+
+    # Build inline attachments for product-line icons (if files exist)
+    inline_attachments = _build_inline_attachments_for_lines()
+
     send_url = f"https://graph.microsoft.com/v1.0/users/{MAIL_FROM}/sendMail"
     payload = {
         "message": {
@@ -512,6 +544,9 @@ def send_via_graph(subject, html_body):
         },
         "saveToSentItems": "true"
     }
+    if inline_attachments:
+        payload["message"]["attachments"] = inline_attachments
+
     h = {"Authorization": f"Bearer {access_token}", "Content-Type":"application/json"}
     rr = requests.post(send_url, headers=h, json=payload, timeout=20)
     rr.raise_for_status()
@@ -522,8 +557,8 @@ def send_via_smtp(subject, html_body):
     from email.mime.text import MIMEText
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = MAIL_FROM
-    msg["To"] = MAIL_TO
+    msg["From"]    = MAIL_FROM
+    msg["To"]      = MAIL_TO
     msg.attach(MIMEText(html_body, "html"))
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
         s.starttls()
@@ -595,20 +630,4 @@ def main():
         if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
             print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
             print("=== SUBJECT ==="); print(subject)
-            print("=== HTML BODY ==="); print(body)
-            return
-        send_via_graph(subject, body)
-    else:
-        # SMTP fallback (optional): in sample mode, just print
-        if use_samples:
-            print("SAMPLE mode with SMTP selected—printing only.")
-            print("=== SUBJECT ==="); print(subject)
-            print("=== HTML BODY ==="); print(body)
-            return
-        send_via_smtp(subject, body)
-
-# -------------------
-# Entry point
-# -------------------
-if __name__ == "__main__":
-    main()
+            print("=== HTML BODY ==="); print(bodymode, just print
