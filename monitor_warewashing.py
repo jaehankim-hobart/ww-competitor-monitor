@@ -1,3 +1,4 @@
+
 # monitor_warewashing.py
 # Python 3.11+
 # Features:
@@ -9,6 +10,7 @@
 # - Builds a 5×N HTML table (rows = product lines; columns = fixed competitor order)
 # - Sends email via Microsoft Graph using app (client credentials)
 # - SQLite state to remember previous hashes/headers
+# - Sample mode & preview.html writer for test workflow
 
 import os, re, sys, sqlite3, hashlib, json, time
 from datetime import datetime, timezone
@@ -40,11 +42,23 @@ LINES_ORDER     = COMP_CONF.get("lines", DEFAULT_LINES)
 
 DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
 
+# -------------------
+# Email styling defaults (in case keys are missing)
+# -------------------
+EMAIL_STYLE = STYLE_CONF.get("email", {})
+EMAIL_FONT_FAMILY = EMAIL_STYLE.get("font_family", "Segoe UI, Arial, sans-serif")
+EMAIL_FONT_SIZE   = EMAIL_STYLE.get("font_size", "14px")
+EMAIL_HEADER_BG   = EMAIL_STYLE.get("header_bg", "#f3f3f3")
+EMAIL_HEADER_FG   = EMAIL_STYLE.get("header_fg", "#000000")
+EMAIL_BODY_BG     = EMAIL_STYLE.get("body_bg", "#ffffff")
+EMAIL_BORDER_CLR  = EMAIL_STYLE.get("border_color", "#dddddd")
+EMAIL_CELL_PAD    = EMAIL_STYLE.get("cell_padding", "6")
+EMAIL_COL_WIDTH   = EMAIL_STYLE.get("column_width", "180px")  # same width for all columns
+EMAIL_UPDATE_BG   = EMAIL_STYLE.get("update_bg", "#FFFFE0")   # cells with updates
 
 # -------------------
 # Build an N/A matrix
 # -------------------
-
 def build_na_map():
     """
     Returns na_map[line][competitor] = True if urls.yaml has an explicit empty list [] for that competitor+line.
@@ -59,13 +73,16 @@ def build_na_map():
                 na[line][comp] = True
     return na
 
-
+# -------------------
+# HTML helper
+# -------------------
 def a(href: str, label: str) -> str:
+    """HTML anchor helper (real tag)."""
     return f'{href}{label}</a>'
 
-
-from urllib.parse import urlparse, unquote
-
+# -------------------
+# Label helpers
+# -------------------
 def display_url_label(href: str, max_len: int = 60) -> str:
     """
     Build a compact, human-readable label for a URL:
@@ -89,145 +106,6 @@ def display_url_label(href: str, max_len: int = 60) -> str:
         return label or href
     except Exception:
         return href
-
-
-def pivot_for_table(all_events):
-    """
-    Convert flat event list into table[line][competitor] = [bullets...]
-    Also return an NA map for cells that should display 'N/A'.
-    """
-    competitors = COMPETITOR_COLS[:]  # fixed order
-    # If any unexpected competitor names show up, append them (rare)
-    extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
-    competitors += [c for c in sorted(set(extras))]
-
-    # Table of bullets and NA map
-    table = {line: {c: [] for c in competitors} for line in LINES_ORDER}
-    na_map = build_na_map()
-
-    for e in all_events:
-        c, line, what, change = e["competitor"], e["line"], e["what"], e["change"]
-        if what in ("Spec Sheet","Brochure"):
-            if change == "updated" and e.get("old_url"):
-                label = (
-                    f'{what} updated: '
-                    f'{a(e["url"], beautify_filename(e["url"]))} '
-                    f'(old: {a(e["old_url"], beautify_filename(e["old_url"]))} '
-                    f'→ new: {a(e["url"], beautify_filename(e["url"]))})'
-                )
-            else:
-                label = f'{what} {change}: {a(e["url"], beautify_filename(e["url"]))}'
-            table[line][c].append(label)
-        elif what == "Product page":
-            # Use shortened, readable label while keeping full URL as href
-            short = display_url_label(e["url"], max_len=60)
-            label = f'Product page {change}: {a(e["url"], short)}'
-            table[line][c].append(label)
-    return competitors, table, na_map
-
-
-def compose_email(all_events):
-    if all_events:
-        comps = sorted({e["competitor"] for e in all_events})
-        subject = "Daily WW Competitor monitor – " + ", ".join(comps)
-    else:
-        subject = "Daily WW Competitor monitor – No update"
-
-    competitors, table, na_map = pivot_for_table(all_events)
-    st = STYLE_CONF["email"]
-
-    html = []
-    html.append(
-        f"<div style='font-family:{st['font_family']}; font-size:{st['font_size']}; background:{st['body_bg']}'>"
-    )
-    html.append(f"<p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d')}</p>")
-    html.append(
-        f"<table border='1' cellpadding='{st['cell_padding']}' cellspacing='0' "
-        f"style='border-collapse:collapse; width:100%; border-color:{st['border_color']}; table-layout:fixed;'>"
-    )
-
-    # Header row (every column same width, including Product Line)
-    html.append("<thead><tr>")
-    for col in (["Product Line"] + competitors):
-        html.append(
-            f"<th style='text-align:left; background:{st['header_bg']}; color:{st['header_fg']}; "
-            f"width:{st['column_width']};'>{col}</th>"
-        )
-    html.append("</tr></thead><tbody>")
-
-    # Rows
-    for line in LINES_ORDER:
-        html.append("<tr>")
-        html.append(f"<td style='font-weight:600; width:{st['column_width']};'>{line}</td>")
-
-        for c in competitors:
-            items = table[line].get(c, [])
-           
-# Build a base style that forces wrapping inside cells
-wrap_css = (
-    "white-space: normal; "
-    "word-break: break-word; "         # break long words/URLs if needed
-    "overflow-wrap: anywhere;"         # allow breaking at any point for very long tokens
-)
-
-for c in competitors:
-    items = table[line].get(c, [])
- # Cell style: fixed width + wrap + optional highlight
-    cell_style = f"width:{st['column_width']}; {wrap_css}"
-    if items:
-        cell_style += f" background:{st['update_bg']};"
-
-    if not items:
-        if na_map.get(line, {}).get(c, False):
-            cell_html = "<em>N/A</em>"
-        else:
-            cell_html = "<em>No Update</em>"
-    else:
-        # Add wrap styles to <ul> and <li> to ensure bullets also wrap
-        bullets = "".join(
-            f"<li style='{wrap_css} margin:0 0 4px 0;'>{it}</li>"
-            for it in items
-        )
-        cell_html = (
-            f"<ul style='margin:0 0 0 17px; padding-left:0; list-style-position: outside; {wrap_css}'>"
-            f"{bullets}"
-            f"</ul>"
-        )
-
-    html.append(f"<td style='{cell_style}'>{cell_html}</td>")
-
-            
-
-            html.append(f"<td style='{cell_style}'>{cell_html}</td>")
-
-        html.append("</tr>")
-
-    html.append("</tbody></table></div>")
-    return subject, "\n".join(html)
-
-
-# -------------------
-# Constants & settings
-# -------------------
-REQUEST_TIMEOUT = 25
-HEADERS = {"User-Agent": "WW-Competitor-Monitor/1.0 (+market intel; contact: ww-monitor@itwfeg.com)"}
-DB_PATH = os.getenv("STATE_DB", "state.db")
-
-SEND_MODE = os.getenv("SEND_MODE", "GRAPH")  # GRAPH or SMTP
-MAIL_TO = os.getenv("MAIL_TO", "jaehan.kim@itwfeg.com")
-MAIL_FROM = os.getenv("MAIL_FROM", "ww-monitor@itwfeg.com")
-
-# Graph (app creds) — paste real values into GitHub Secrets after IT sends them
-GRAPH_TENANT = os.getenv("GRAPH_TENANT_ID", "")
-GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID", "")
-GRAPH_CLIENT_SECRET = os.getenv("GRAPH_CLIENT_SECRET", "")
-
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-
-PDF_PATTERNS = re.compile(r"(spec(ification)?\s*sheet|data\s*sheet|datasheet|brochure|sales\s*sheet)", re.I)
 
 ACRONYM_KEEP = {"PRO","VHR","ER","HT","LT","HR","ADA","NSF","UL"}
 
@@ -331,6 +209,30 @@ def record_resource(cur, url, competitor, line, kind, headers, content_hash, tit
             return None, prev_row
 
 # -------------------
+# Constants & settings
+# -------------------
+REQUEST_TIMEOUT = 25
+HEADERS = {"User-Agent": "WW-Competitor-Monitor/1.0 (+market intel; contact: ww-monitor@itwfeg.com)"}
+DB_PATH = os.getenv("STATE_DB", "state.db")
+
+SEND_MODE = os.getenv("SEND_MODE", "GRAPH")  # GRAPH or SMTP
+MAIL_TO = os.getenv("MAIL_TO", "jaehan.kim@itwfeg.com")
+MAIL_FROM = os.getenv("MAIL_FROM", "ww-monitor@itwfeg.com")
+
+# Graph (app creds)
+GRAPH_TENANT = os.getenv("GRAPH_TENANT_ID", "")
+GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID", "")
+GRAPH_CLIENT_SECRET = os.getenv("GRAPH_CLIENT_SECRET", "")
+
+# SMTP (optional fallback)
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+
+PDF_PATTERNS = re.compile(r"(spec(ification)?\s*sheet|data\s*sheet|datasheet|brochure|sales\s*sheet)", re.I)
+
+# -------------------
 # HTTP helpers
 # -------------------
 session = requests.Session()
@@ -367,9 +269,9 @@ def extract_links(html, base):
     soup = BeautifulSoup(html, "lxml")
     links = []
     title = (soup.title.string.strip() if soup.title else "")
-    for a in soup.find_all("a", href=True):
-        href = urljoin(base, a["href"])
-        text = (a.get_text(" ", strip=True) or "")
+    for a_tag in soup.find_all("a", href=True):
+        href = urljoin(base, a_tag["href"])
+        text = (a_tag.get_text(" ", strip=True) or "")
         links.append((href, text))
     return title, links
 
@@ -471,6 +373,118 @@ def crawl_all(cur):
     return events
 
 # -------------------
+# Pivot for table
+# -------------------
+def pivot_for_table(all_events):
+    competitors = COMPETITOR_COLS[:]  # fixed order you provided
+    # Include unexpected names (very rare) at the end so we don't lose data
+    extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
+    competitors += [c for c in sorted(set(extras))]
+
+    # Table of updates
+    table = {line: {c: [] for c in competitors} for line in LINES_ORDER}
+
+    # NA matrix based on urls.yaml
+    na_map = build_na_map()
+
+    for e in all_events:
+        c, line, what, change = e["competitor"], e["line"], e["what"], e["change"]
+        if what in ("Spec Sheet","Brochure"):
+            if change == "updated" and e.get("old_url"):
+                label = (
+                    f'{what} updated: '
+                    f'{a(e["url"], beautify_filename(e["url"]))} '
+                    f'(old: {a(e["old_url"], beautify_filename(e["old_url"]))} '
+                    f'→ new: {a(e["url"], beautify_filename(e["url"]))})'
+                )
+            else:
+                label = f'{what} {change}: {a(e["url"], beautify_filename(e["url"]))}'
+            table[line][c].append(label)
+        elif what == "Product page":
+            # Use shortened, readable label while keeping full URL as href
+            short = display_url_label(e["url"], max_len=60)
+            label = f'Product page {change}: {a(e["url"], short)}'
+            table[line][c].append(label)
+    return competitors, table, na_map
+
+# -------------------
+# Email builder (table HTML) with robust wrapping
+# -------------------
+def compose_email(all_events):
+    """
+    Build the subject + HTML body:
+    - Same fixed column width for every column (table-layout: fixed)
+    - Shade cells with updates using #FFFFE0
+    - Show 'N/A' when urls.yaml lists [] for that competitor+line
+    - Show 'No Update' when no events and the line is applicable
+    - Force wrap inside columns so bullets/URLs never bleed across columns
+    """
+    if all_events:
+        comps = sorted({e["competitor"] for e in all_events})
+        subject = "Daily WW Competitor monitor – " + ", ".join(comps)
+    else:
+        subject = "Daily WW Competitor monitor – No update"
+
+    competitors, table, na_map = pivot_for_table(all_events)
+
+    # CSS snippets that force wrapping in picky email clients (incl. Outlook)
+    wrap_css = (
+        "white-space: normal; "     # allow wrapping
+        "word-break: break-word; "  # break long tokens/URLs if needed
+        "overflow-wrap: anywhere;"  # allow break anywhere for extreme tokens
+    )
+    li_style = f"{wrap_css} margin:0 0 4px 0;"
+    ul_style = f"margin:0 0 0 17px; padding-left:0; list-style-position: outside; {wrap_css}"
+
+    html = []
+    html.append(
+        f"<div style='font-family:{EMAIL_FONT_FAMILY}; font-size:{EMAIL_FONT_SIZE}; background:{EMAIL_BODY_BG}'>"
+    )
+    html.append(f"<p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d')}</p>")
+    html.append(
+        f"<table border='1' cellpadding='{EMAIL_CELL_PAD}' cellspacing='0' "
+        f"style='border-collapse:collapse; width:100%; border-color:{EMAIL_BORDER_CLR}; table-layout:fixed;'>"
+    )
+
+    # Header row (every column same width, including Product Line)
+    html.append("<thead><tr>")
+    for col in (["Product Line"] + competitors):
+        html.append(
+            f"<th style='text-align:left; background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; "
+            f"width:{EMAIL_COL_WIDTH};'>{col}</th>"
+        )
+    html.append("</tr></thead><tbody>")
+
+    # Rows
+    for line in LINES_ORDER:
+        html.append("<tr>")
+        html.append(f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css}'>{line}</td>")
+
+        for c in competitors:
+            items = table[line].get(c, [])
+
+            # Per-cell style: fixed width + wrap + optional highlight
+            cell_style = f"width:{EMAIL_COL_WIDTH}; {wrap_css}"
+            if items:
+                cell_style += f" background:{EMAIL_UPDATE_BG};"
+
+            if not items:
+                if na_map.get(line, {}).get(c, False):
+                    cell_html = "<em>N/A</em>"
+                else:
+                    cell_html = "<em>No Update</em>"
+            else:
+                bullets = "".join(f"<li style='{li_style}'>{it}</li>" for it in items)
+                cell_html = f"<ul style='{ul_style}'>{bullets}</ul>"
+
+            html.append(f"<td style='{cell_style}'>{cell_html}</td>")
+
+        html.append("</tr>")
+
+    html.append("</tbody></table></div>")
+    return subject, "\n".join(html)
+
+# -------------------
 # Senders
 # -------------------
 def send_via_graph(subject, html_body):
@@ -512,7 +526,6 @@ def send_via_smtp(subject, html_body):
             s.login(SMTP_USER, SMTP_PASS)
         s.sendmail(MAIL_FROM, [a.strip() for a in MAIL_TO.split(",") if a.strip()], msg.as_string())
 
-
 # -------------------
 # Preview Test
 # -------------------
@@ -532,7 +545,6 @@ def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
         f.write(html)
     print(f"[TEST MODE] Wrote {fname} with rendered email HTML.")
 
-
 def sample_events_for_preview():
     return [
         {"competitor":"Champion","line":"Rack Conveyor","url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.09-2025.pdf","what":"Spec Sheet","change":"updated","old_url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.08-2025.pdf"},
@@ -549,17 +561,16 @@ def sample_events_for_preview():
 # -------------------
 # Main
 # -------------------
-
 def main():
     con = init_db()
     cur = con.cursor()
 
-    use_samples = os.getenv("SAMPLE_EVENTS") == "1"
+    use_samples   = os.getenv("SAMPLE_EVENTS") == "1"
     force_preview = os.getenv("WRITE_PREVIEW") == "1"
     print(f"[DEBUG] SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} use_samples={use_samples} WRITE_PREVIEW={os.getenv('WRITE_PREVIEW')} force_preview={force_preview}")
 
     if use_samples:
-        all_events = sample_events_for_preview()  # <-- make sure this function exists above main()
+        all_events = sample_events_for_preview()
     else:
         all_events = crawl_all(cur)
         # Persist only real crawl events
@@ -590,7 +601,6 @@ def main():
             print("=== HTML BODY ==="); print(body)
             return
         send_via_smtp(subject, body)
-
 
 # -------------------
 # Entry point
