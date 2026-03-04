@@ -535,11 +535,9 @@ def sample_events_for_preview():
 # -------------------
 # Preview Test
 # -------------------
+
 def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
-    """
-    Writes a standalone HTML file for easy preview in SAMPLE mode.
-    """
-    # minimal wrapper to ensure valid HTML document
+    """Writes a standalone HTML file for easy preview in SAMPLE mode."""
     html = f"""<!doctype html>
 <html>
 <head>
@@ -552,12 +550,14 @@ def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
 </html>"""
     with open(fname, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"[TEST MODE] Wrote {fname} with rendered email HTML.")
+    print(f"[TEST MODE] Wrote {fname} with rendered email HTML."
+
 
 
 # -------------------
 # Main
 # -------------------
+
 
 def main():
     con = init_db()
@@ -568,7 +568,6 @@ def main():
         all_events = sample_events_for_preview()
     else:
         all_events = crawl_all(cur)
-        # Persist only real crawl events
         for e in all_events:
             cur.execute("INSERT INTO events(ts, competitor, line, url, what, change) VALUES(?,?,?,?,?,?)",
                         (datetime.now(timezone.utc).isoformat(), e["competitor"], e["line"], e["url"], e["what"], e["change"]))
@@ -582,9 +581,8 @@ def main():
             print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
-            # NEW: always write preview.html in SAMPLE mode
             if use_samples:
-                write_preview_file(subject, body, "preview.html")
+                write_preview_file(subject, body, "preview.html")  # <<< ensure we write the file
             return
         send_via_graph(subject, body)
     else:
@@ -593,8 +591,9 @@ def main():
             print("SAMPLE mode with SMTP selected—printing only.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
-            write_preview_file(subject, body, "preview.html")
+            write_preview_file(subject, body, "preview.html")      # <<< ensure we write the file
             return
         send_via_smtp(subject, body)
+
 
 
