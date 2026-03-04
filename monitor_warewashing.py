@@ -37,20 +37,122 @@ DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "R
 # -------------------
 # Build an N/A matrix
 # -------------------
+
 def build_na_map():
     """
     Returns na_map[line][competitor] = True if urls.yaml has an explicit empty list [] for that competitor+line.
-    That means: this competitor does not offer this product line -> render 'N/A'.
+    We then render 'N/A' in the table for that cell.
     """
     na = {line: {c: False for c in COMPETITOR_COLS} for line in LINES_ORDER}
     for comp in COMPETITOR_COLS:
         lines = URLS_CONF.get(comp, {})
         for line in LINES_ORDER:
             urls = lines.get(line, None)
-            # Only mark N/A when it's explicitly [] in urls.yaml (meaning not applicable)
             if isinstance(urls, list) and len(urls) == 0:
                 na[line][comp] = True
     return na
+
+def a(href: str, label: str) -> str:
+    """HTML anchor helper."""
+    return f'<a href="{href}">{label}</a>'
+
+def pivot_for_table(all_events):
+    """
+    Convert flat event list into table[line][competitor] = [bullets...]
+    Also return an NA map for cells that should display 'N/A'.
+    """
+    competitors = COMPETITOR_COLS[:]  # fixed order
+    # If any unexpected competitor names show up, append them (rare)
+    extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
+    competitors += [c for c in sorted(set(extras))]
+
+    # Table of bullets and NA map
+    table = {line: {c: [] for c in competitors} for line in LINES_ORDER}
+    na_map = build_na_map()
+
+    for e in all_events:
+        c, line, what, change = e["competitor"], e["line"], e["what"], e["change"]
+        if what in ("Spec Sheet","Brochure"):
+            if change == "updated" and e.get("old_url"):
+                label = (
+                    f'{what} updated: '
+                    f'{a(e["url"], beautify_filename(e["url"]))} '
+                    f'(old: {a(e["old_url"], beautify_filename(e["old_url"]))} '
+                    f'→ new: {a(e["url"], beautify_filename(e["url"]))})'
+                )
+            else:
+                label = f'{what} {change}: {a(e["url"], beautify_filename(e["url"]))}'
+            table[line][c].append(label)
+        elif what == "Product page":
+            # For pages, just show URL as the label
+            label = f'Product page {change}: {a(e["url"], e["url"])}'
+            table[line][c].append(label)
+
+    return competitors, table, na_map
+
+
+def compose_email(all_events):
+    """
+    Build the subject + HTML body:
+    - Same fixed column width for every column (table-layout: fixed)
+    - Shade cells with updates using #FFFFE0
+    - Show 'N/A' when urls.yaml lists [] for that competitor+line
+    - Show 'No Update' when no events and the line is applicable
+    """
+    if all_events:
+        comps = sorted({e["competitor"] for e in all_events})
+        subject = "Daily WW Competitor monitor – " + ", ".join(comps)
+    else:
+        subject = "Daily WW Competitor monitor – No update"
+
+    competitors, table, na_map = pivot_for_table(all_events)
+    st = STYLE_CONF["email"]
+
+    html = []
+    html.append(
+        f"<div style='font-family:{st['font_family']}; font-size:{st['font_size']}; background:{st['body_bg']}'>"
+    )
+    html.append(f"<p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d')}</p>")
+    html.append(
+        f"<table border='1' cellpadding='{st['cell_padding']}' cellspacing='0' "
+        f"style='border-collapse:collapse; width:100%; border-color:{st['border_color']}; table-layout:fixed;'>"
+    )
+
+    # Header row (every column same width, including Product Line)
+    html.append("<thead><tr>")
+    for col in (["Product Line"] + competitors):
+        html.append(
+            f"<th style='text-align:left; background:{st['header_bg']}; color:{st['header_fg']}; "
+            f"width:{st['column_width']};'>{col}</th>"
+        )
+    html.append("</tr></thead><tbody>")
+
+    # Rows
+    for line in LINES_ORDER:
+        html.append("<tr>")
+        html.append(f"<td style='font-weight:600; width:{st['column_width']};'>{line}</td>")
+
+        for c in competitors:
+            items = table[line].get(c, [])
+            cell_style = f"width:{st['column_width']};"
+            if items:  # shade cells containing updates
+                cell_style += f" background:{st['update_bg']};"
+
+            if not items:
+                if na_map.get(line, {}).get(c, False):
+                    cell_html = "<em>N/A</em>"
+                else:
+                    cell_html = "<em>No Update</em>"
+            else:
+                bullets = "".join(f"<li>{it}</li>" for it in items)
+                cell_html = f"<ul style='margin:0 0 0 17px; padding-left:0;'>{bullets}</ul>"
+
+            html.append(f"<td style='{cell_style}'>{cell_html}</td>")
+
+        html.append("</tr>")
+
+    html.append("</tbody></table></div>")
+    return subject, "\n".join(html)
 
 # -------------------
 # Constants & settings
@@ -320,7 +422,10 @@ def crawl_all(cur):
 # Email builder (table HTML)
 # -------------------
 def a(href: str, label: str) -> str:
+    """HTML anchor helper (real tags)."""
     return f'<a href="{href}">{label}</a>'
+
+
 
 def pivot_for_table(all_events):
     competitors = COMPETITOR_COLS[:]  # fixed order you provided
@@ -395,29 +500,68 @@ def send_via_smtp(subject, html_body):
             s.login(SMTP_USER, SMTP_PASS)
         s.sendmail(MAIL_FROM, [a.strip() for a in MAIL_TO.split(",") if a.strip()], msg.as_string())
 
+
+def sample_events_for_preview():
+    # Simulated events that exercise different lines/competitors
+    return [
+        # Rack Conveyor – Champion spec sheet updated
+        {"competitor":"Champion","line":"Rack Conveyor","url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.09-2025.pdf","what":"Spec Sheet","change":"updated","old_url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.08-2025.pdf"},
+        # Rack Conveyor – Jackson brochure added
+        {"competitor":"Jackson","line":"Rack Conveyor","url":"https://www.jacksonwws.com/wp-content/uploads/2026/02/RackStar_66_ER_brochure.pdf","what":"Brochure","change":"added","old_url":None},
+        # Door Type – CMA product page updated
+        {"competitor":"CMA","line":"Door Type","url":"https://cmadishmachines.com/product/model-180-straight/","what":"Product page","change":"updated","old_url":None},
+        # Undercounter – Meiko product page added
+        {"competitor":"Meiko","line":"Undercounter","url":"https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers/fv-402-g","what":"Product page","change":"added","old_url":None},
+        # Prep Washer – Douglas brochure added
+        {"competitor":"Douglas","line":"Prep Washer","url":"https://www.dougmac.com/wp-content/uploads/2024/08/Product-Sheet-Bucket-Pan-Washer.pdf","what":"Brochure","change":"added","old_url":None},
+        # Prep Washer – LVO product page updated
+        {"competitor":"LVO","line":"Prep Washer","url":"https://www.lvomfg.com/site/product/fl36/","what":"Product page","change":"updated","old_url":None},
+        # Door Type – ADS product page added
+        {"competitor":"ADS","line":"Door Type","url":"https://www.americandish.com/product/upright-dish-machine-af-afc-es/","what":"Product page","change":"added","old_url":None},
+        # Undercounter – Moyer Diebel spec sheet added
+        {"competitor":"Moyer Diebel","line":"Undercounter","url":"https://moyerdiebel.com/content/specs/383HT_Spec_Sheet.pdf","what":"Spec Sheet","change":"added","old_url":None},
+        # Flight Type – Jackson product page updated
+        {"competitor":"Jackson","line":"Flight Type","url":"https://www.jacksonwws.com/products/flightstar/","what":"Product page","change":"updated","old_url":None},
+    ]
+
+
 # -------------------
 # Main
 # -------------------
+
 def main():
     con = init_db()
     cur = con.cursor()
-    all_events = crawl_all(cur)
-    # Persist events
-    for e in all_events:
-        cur.execute("INSERT INTO events(ts, competitor, line, url, what, change) VALUES(?,?,?,?,?,?)",
-                    (datetime.now(timezone.utc).isoformat(), e["competitor"], e["line"], e["url"], e["what"], e["change"]))
-    con.commit()
+
+    use_samples = os.getenv("SAMPLE_EVENTS") == "1"
+    if use_samples:
+        all_events = sample_events_for_preview()
+    else:
+        all_events = crawl_all(cur)
+        # Persist only real crawl events
+        for e in all_events:
+            cur.execute("INSERT INTO events(ts, competitor, line, url, what, change) VALUES(?,?,?,?,?,?)",
+                        (datetime.now(timezone.utc).isoformat(), e["competitor"], e["line"], e["url"], e["what"], e["change"]))
+        con.commit()
 
     subject, body = compose_email(all_events)
 
     if SEND_MODE.upper() == "GRAPH":
-        if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET):
-            print("Graph credentials not set yet. Skipping send. (Subject would have been: %s)" % subject)
+        # With no credentials or in SAMPLE mode, just print (no send)
+        if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
+            print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
+            print("=== SUBJECT ===")
+            print(subject)
+            print("=== HTML BODY ===")
             print(body)
             return
         send_via_graph(subject, body)
     else:
+        # SMTP fallback (optional): in sample mode, just print
+        if use_samples:
+            print("SAMPLE mode with SMTP selected—printing only.")
+            print("=== SUBJECT ==="); print(subject)
+            print("=== HTML BODY ==="); print(body)
+            return
         send_via_smtp(subject, body)
 
-if __name__ == "__main__":
-    main()
