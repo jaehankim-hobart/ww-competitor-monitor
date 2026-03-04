@@ -35,6 +35,24 @@ LINES_ORDER = COMP_CONF["lines"]
 DOOR, UNDER, PREP, RACK, FLIGHT = "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
 
 # -------------------
+# Build an N/A matrix
+# -------------------
+def build_na_map():
+    """
+    Returns na_map[line][competitor] = True if urls.yaml has an explicit empty list [] for that competitor+line.
+    That means: this competitor does not offer this product line -> render 'N/A'.
+    """
+    na = {line: {c: False for c in COMPETITOR_COLS} for line in LINES_ORDER}
+    for comp in COMPETITOR_COLS:
+        lines = URLS_CONF.get(comp, {})
+        for line in LINES_ORDER:
+            urls = lines.get(line, None)
+            # Only mark N/A when it's explicitly [] in urls.yaml (meaning not applicable)
+            if isinstance(urls, list) and len(urls) == 0:
+                na[line][comp] = True
+    return na
+
+# -------------------
 # Constants & settings
 # -------------------
 REQUEST_TIMEOUT = 25
@@ -301,65 +319,39 @@ def crawl_all(cur):
 # -------------------
 # Email builder (table HTML)
 # -------------------
+def a(href: str, label: str) -> str:
+    return f'<a href="{href}">{label}</a>'
+
 def pivot_for_table(all_events):
-    competitors = COMPETITOR_COLS[:]  # fixed order
-    # Also include any unexpected names at end (rare)
+    competitors = COMPETITOR_COLS[:]  # fixed order you provided
+    # Include unexpected names (very rare) at the end so we don't lose data
     extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
     competitors += [c for c in sorted(set(extras))]
+
+    # Table of updates
     table = {line: {c: [] for c in competitors} for line in LINES_ORDER}
+
+    # NA matrix based on urls.yaml
+    na_map = build_na_map()
+
     for e in all_events:
         c, line, what, change = e["competitor"], e["line"], e["what"], e["change"]
         if what in ("Spec Sheet","Brochure"):
             if change == "updated" and e.get("old_url"):
                 label = (
                     f'{what} updated: '
-                    f'<a href="{e["url"]}">{beautify_filename(e["url"])}</a> '
-                    f'(old: <a href="{e["old_url"]}">{beautify_filename(e["old_url"])}</a> '
-                    f'→ new: <a href="{e["url"]}">{beautify_filename(e["url"])}</a>)'
+                    f'{a(e["url"], beautify_filename(e["url"]))} '
+                    f'(old: {a(e["old_url"], beautify_filename(e["old_url"]))} '
+                    f'→ new: {a(e["url"], beautify_filename(e["url"]))})'
                 )
             else:
-                label = f'{what} {change}: <a href="{e["url"]}">{beautify_filename(e["url"])}</a>'
+                label = f'{what} {change}: {a(e["url"], beautify_filename(e["url"]))}'
             table[line][c].append(label)
         elif what == "Product page":
-            label = f'Product page {change}: <a href="{e["url"]}">{e["url"]}</a>'
+            label = f'Product page {change}: {a(e["url"], e["url"])}'
             table[line][c].append(label)
-    return competitors, table
 
-def compose_email(all_events):
-    if all_events:
-        comps = sorted({e["competitor"] for e in all_events})
-        subject = "Daily WW Competitor monitor – " + ", ".join(comps)
-    else:
-        subject = "Daily WW Competitor monitor – No update"
-
-    competitors, table = pivot_for_table(all_events)
-    st = STYLE_CONF["email"]
-    html = []
-    html.append(f"<div style='font-family:{st['font_family']}; font-size:{st['font_size']}; background:{st['body_bg']}'>")
-    html.append(f"<p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d')}</p>")
-    html.append(f"<table border='1' cellpadding='{st['cell_padding']}' cellspacing='0' style='border-collapse:collapse; width:100%; border-color:{st['border_color']}'>")
-    # header
-    html.append("<thead><tr>")
-    html.append(f"<th style='text-align:left; background:{st['header_bg']}; color:{st['header_fg']}; width:{st['product_col_width']}'>Product Line</th>")
-    for c in competitors:
-        html.append(f"<th style='text-align:left; background:{st['header_bg']}; color:{st['header_fg']};'>{c}</th>")
-    html.append("</tr></thead><tbody>")
-    # rows
-    for line in LINES_ORDER:
-        html.append("<tr>")
-        html.append(f"<td style='font-weight:600'>{line}</td>")
-        for c in competitors:
-            items = table[line].get(c, [])
-            if not items:
-                html.append("<td><em>No Update</em></td>")
-            else:
-                html.append("<td><ul style='margin:0 0 0 17px; padding-left:0;'>")
-                for it in items:
-                    html.append(f"<li>{it}</li>")
-                html.append("</ul></td>")
-        html.append("</tr>")
-    html.append("</tbody></table></div>")
-    return subject, "\n".join(html)
+    return competitors, table, na_map
 
 # -------------------
 # Senders
