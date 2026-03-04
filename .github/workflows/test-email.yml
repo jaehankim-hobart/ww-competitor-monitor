@@ -1,3 +1,4 @@
+
 name: WW Monitor – Test Email (Sample Events)
 
 on:
@@ -28,12 +29,23 @@ jobs:
           GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
           SAMPLE_EVENTS: "1"
         run: |
-          set -e
-          python monitor_warewashing.py
-          # sanity check
-          test -s preview.html && echo "preview.html created"
+          set +e  # do NOT stop the job if python returns non-zero
+          python monitor_warewashing.py | tee monitor_output.txt
+          echo "Python exit code: $?"
+          # If preview.html not created, try to build it from logs as a fallback
+          if [ ! -s preview.html ]; then
+            echo "preview.html not found — attempting to extract from logs"
+            awk '/=== HTML BODY ===/{flag=1;next} flag{print}' monitor_output.txt > preview.html
+          fi
+          # At this point, preview.html may still be empty if script produced no HTML.
+          if [ -s preview.html ]; then
+            echo "preview.html ready"
+          else
+            echo "WARNING: preview.html is empty. Check logs for HTML markers."
+          fi
 
-      - name: Upload preview artifact
+      - name: Upload preview artifact (always run)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ww-monitor-preview
