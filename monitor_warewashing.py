@@ -533,6 +533,29 @@ def sample_events_for_preview():
 
 
 # -------------------
+# Preview Test
+# -------------------
+def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
+    """
+    Writes a standalone HTML file for easy preview in SAMPLE mode.
+    """
+    # minimal wrapper to ensure valid HTML document
+    html = f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{subject}</title>
+</head>
+<body>
+{body}
+</body>
+</html>"""
+    with open(fname, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"[TEST MODE] Wrote {fname} with rendered email HTML.")
+
+
+# -------------------
 # Main
 # -------------------
 
@@ -557,10 +580,11 @@ def main():
         # With no credentials or in SAMPLE mode, just print (no send)
         if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
             print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
-            print("=== SUBJECT ===")
-            print(subject)
-            print("=== HTML BODY ===")
-            print(body)
+            print("=== SUBJECT ==="); print(subject)
+            print("=== HTML BODY ==="); print(body)
+            # NEW: always write preview.html in SAMPLE mode
+            if use_samples:
+                write_preview_file(subject, body, "preview.html")
             return
         send_via_graph(subject, body)
     else:
@@ -569,6 +593,8 @@ def main():
             print("SAMPLE mode with SMTP selected—printing only.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
+            write_preview_file(subject, body, "preview.html")
             return
         send_via_smtp(subject, body)
+
 
