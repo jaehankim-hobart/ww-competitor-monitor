@@ -1,8 +1,7 @@
-
 name: WW Monitor – Test Email (Sample Events)
 
 on:
-  workflow_dispatch: {}   # run manually from the Actions tab
+  workflow_dispatch: {}
 
 jobs:
   test:
@@ -19,7 +18,6 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml pyyaml
 
-      # (1) Run and capture stdout to a file
       - name: Run monitor in SAMPLE mode (no send)
         env:
           SEND_MODE: GRAPH
@@ -31,17 +29,10 @@ jobs:
           SAMPLE_EVENTS: "1"
         run: |
           set -e
-          python monitor_warewashing.py | tee monitor_output.txt
+          python monitor_warewashing.py
+          # sanity check
+          test -s preview.html && echo "preview.html created"
 
-      # (2) Extract HTML body into preview.html
-      - name: Build preview.html from output
-        run: |
-          awk '/=== HTML BODY ===/{flag=1;next} flag{print}' monitor_output.txt > preview.html
-          echo "Wrote preview.html"
-          # Optional: show the first 10 lines for a quick sanity check
-          head -n 10 preview.html || true
-
-      # (3) Upload the preview as an artifact for download
       - name: Upload preview artifact
         uses: actions/upload-artifact@v4
         with:
