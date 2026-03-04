@@ -1,0 +1,11 @@
+# You can tweak table colors/font without touching Python.
+
+email:
+  font_family: "Segoe UI, Arial, sans-serif"
+  font_size: "14px"
+  header_bg: "#f3f3f3"
+  header_fg: "#000000"
+  body_bg: "#ffffff"
+  border_color: "#dddddd"
+  cell_padding: "6"
+  product_col_width: "220px"
