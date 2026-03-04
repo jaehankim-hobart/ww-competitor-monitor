@@ -1,15 +1,22 @@
-
 name: WW Monitor – Test Email (Sample Events)
 
 on:
   workflow_dispatch: {}
 
+# Ensure the GITHUB_TOKEN has repo write access (so the script can push archives if you test it here).
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # ⬇️ THIS is where you put the checkout step (first in steps).
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0           # required for pushing commits back
+          persist-credentials: true  # default true; explicit for clarity
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -19,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml pyyaml
 
-      - name: Run monitor in SAMPLE mode (no send)
+      - name: Run monitor in SAMPLE mode (no send; writes preview.html)
         env:
           SEND_MODE: GRAPH
           MAIL_FROM: "ww-monitor@itwfeg.com"
@@ -27,28 +34,21 @@ jobs:
           GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
           GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
           GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
-          SAMPLE_EVENTS: "1"
-          WRITE_PREVIEW: "1"     # <<< new: always request preview file
+          SAMPLE_EVENTS: "1"        # generate simulated events for preview
+          WRITE_PREVIEW: "1"        # always write preview.html
+          # Optional: override archive dir (default 'archive')
+          # ARCHIVE_DIR: "archive"
         run: |
-          set +e  # do NOT stop job if python non-zero
-          python monitor_warewashing.py | tee monitor_output.txt
-          echo "Python exit code: $?"
-          ls -la || true
-          if [ ! -s preview.html ]; then
-            echo "WARNING: preview.html missing or empty — attempting to extract from logs"
-            awk '/=== HTML BODY ===/{flag=1;next} flag{print}' monitor_output.txt > preview.html
-          fi
-          if [ -s preview.html ]; then
-            echo "preview.html ready"
-          else
-            echo "WARNING: preview.html is still empty. Check monitor_output.txt for details."
-          fi
+          set -e
+          python monitor_warewashing.py
+          test -s preview.html && echo "preview.html created"
 
-      - name: Upload artifacts (always)
+      - name: Upload preview & logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ww-monitor-test-artifacts
           path: |
             preview.html
-            monitor_output.txt
+            archive/**/*
+          if-no-files-found: ignore
