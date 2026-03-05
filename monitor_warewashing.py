@@ -622,7 +622,7 @@ def crawl_all(cur):
                 events.extend(evs)
                 # Politeness delay
                 time.sleep(0.3)
-    print(f"[SEEDS] Crawl finished with {len(events)} events}")
+    print(f"[SEEDS] Crawl finished with {len(events)} events")
     return events
 
 
