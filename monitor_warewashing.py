@@ -2,7 +2,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Competitor Monitor – Clean Version with Site Rules & Champion Line Inference
+Competitor Monitor – with Site Rules & Champion Line Inference
+- Embedded product link extraction (onclick/data-url/JS helpers)
+- Per-competitor pdf_accept_all (Champion enabled via site_rules.yaml)
+- Rules-aware page following and line inference
+- Clean archiving and email summary
 """
 
 import os
@@ -40,12 +44,11 @@ def load_yaml(path):
 BASE_DIR = os.path.dirname(__file__)
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 
-# Optional configs
 COMP_CONF = load_yaml(os.path.join(CONFIG_DIR, "competitors.yaml")) if os.path.exists(os.path.join(CONFIG_DIR, "competitors.yaml")) else {}
 URLS_CONF = load_yaml(os.path.join(CONFIG_DIR, "urls.yaml")) if os.path.exists(os.path.join(CONFIG_DIR, "urls.yaml")) else {}
 STYLE_CONF = load_yaml(os.path.join(CONFIG_DIR, "styling.yaml")) if os.path.exists(os.path.join(CONFIG_DIR, "styling.yaml")) else {}
 
-# New: per-site crawling/classification rules
+# Per-site rules
 RULES_PATH = os.path.join(CONFIG_DIR, "site_rules.yaml")
 SITE_RULES = load_yaml(RULES_PATH) if os.path.exists(RULES_PATH) else {}
 
@@ -86,8 +89,9 @@ GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "")
 GITHUB_REF_NAME = os.getenv("GITHUB_REF_NAME", "main")
 BOOTSTRAP = os.getenv("BOOTSTRAP_ARCHIVE") == "1"
 
+
 # -------------------
-# Build N/A matrix from urls.yaml
+# Utilities
 # -------------------
 def build_na_map():
     na = {line: {c: False for c in COMPETITOR_COLS} for line in LINES_ORDER}
@@ -100,8 +104,20 @@ def build_na_map():
     return na
 
 
+def ensure_archive_tree():
+    """Pre-create archive/<Competitor>/<Line> folders for a stable layout."""
+    for competitor in (URLS_CONF or {}).keys():
+        for line in LINES_ORDER:
+            subdir = os.path.join(
+                ARCHIVE_DIR,
+                re.sub(r"[\\/]+", "_", competitor).strip(),
+                re.sub(r"[\\/]+", "_", line).strip()
+            )
+            os.makedirs(subdir, exist_ok=True)
+
+
 # -------------------
-# HTML link helpers
+# HTML/link helpers
 # -------------------
 def a(href: str, label: str) -> str:
     href = href or "#"
@@ -142,8 +158,26 @@ def beautify_filename(url_or_name: str) -> str:
             words.append(w.upper())
         else:
             words.append(w.capitalize())
-    name = " ".join(words)
-    return name
+    return " ".join(words)
+
+
+def extract_embedded_links(html: str, base: str) -> set[str]:
+    """Find product links present in onclick/data attributes/JS helpers."""
+    out = set()
+    # onclick="location.href='...'" or onclick="window.location='...'"
+    for m in re.finditer(r'onclick\s*=\s*"(?:location\.href|window\.location)\s*=\s*[\'"]([^\'"]+)[\'"]', html, re.I):
+        out.add(urljoin(base, m.group(1)))
+    for m in re.finditer(r"onclick\s*=\s*'(?:location\.href|window\.location)\s*=\s*[\"']([^\"']+)[\"']", html, re.I):
+        out.add(urljoin(base, m.group(1)))
+    # data-url="/path/to/product/"
+    for m in re.finditer(r'data-url\s*=\s*"([^"]+)"', html, re.I):
+        out.add(urljoin(base, m.group(1)))
+    for m in re.finditer(r"data-url\s*=\s*'([^']+)'", html, re.I):
+        out.add(urljoin(base, m.group(1)))
+    # JS helpers like goToProduct('/path/...') or openProduct("...")
+    for m in re.finditer(r'(?:goToProduct|openProduct)\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', html, re.I):
+        out.add(urljoin(base, m.group(1)))
+    return out
 
 
 # -------------------
@@ -356,6 +390,7 @@ def _get_rules_for(competitor: str):
         "pdf_host_allow": _compile_patterns(r.get("pdf_host_allow")),
         "line_patterns": {k: _compile_patterns(v) for k, v in (r.get("line_patterns") or {}).items()},
         "pdf_path_line_hints": {k: re.compile(v) for k, v in (r.get("pdf_path_line_hints") or {}).items()},
+        "pdf_accept_all": bool(r.get("pdf_accept_all", False)),   # NEW
     }
 
 def _host_allowed(host_allow, netloc: str) -> bool:
@@ -380,8 +415,13 @@ def looks_like_product_page(url: str, competitor: str) -> bool:
     if rules["path_block"] and _path_blocked(rules["path_block"], path):
         return False
     if rules["page_allow"]:
-        # For competitors with rules, only follow allowed page patterns
-        return _page_allowed(rules["page_allow"], path)
+        if _page_allowed(rules["page_allow"], path):
+            return True
+
+    # Champion-specific hint (follow if URL contains explicit line markers)
+    if competitor == "Champion":
+        if re.search(r'(?i)(Door-Type-Dishwashing-Machine|Undercounter-Dishwashing-Machine|Door-Type-Pot-Pan-and-Utensil-Washer|Tank-Rack-Conveyor|flight-conveyor-series)', url):
+            return True
 
     # Fallback heuristic (for competitors without site_rules.yaml)
     return any(x in url.lower() for x in ("/product", "/products/", "/our-products", "/rack", "/door", "/flight", "/dish", "/washer", "/categories/"))
@@ -429,6 +469,11 @@ def crawl_seed(cur, competitor, line, url):
         return results
 
     title, links = extract_links(html, url)
+    # Add embedded product links (onclick/data-url/JS)
+    embedded = extract_embedded_links(html, url)
+    if embedded:
+        links.extend((e, "") for e in sorted(embedded))
+
     print(f"[CRAWL] {competitor} | {line} | {url} -> {len(links)} links")
 
     # Record the seed page (category page)
@@ -449,7 +494,6 @@ def crawl_seed(cur, competitor, line, url):
 
     # Discover PDFs in seed HTML (absolute/relative) + anchor href PDFs
     pdf_candidates = set()
-
     for m in ABS_PDF_RX.finditer(html):
         pdf_candidates.add(urljoin(url, m.group(0)))
     for m in REL_PDF_RX.finditer(html):
@@ -470,7 +514,8 @@ def crawl_seed(cur, competitor, line, url):
     if filtered_pdf_candidates:
         pdf_candidates = filtered_pdf_candidates
 
-    archive_all = os.getenv("ARCHIVE_ALL_PDFS", "0") == "1"
+    # Accept-all if env or rules say so
+    archive_all = os.getenv("ARCHIVE_ALL_PDFS", "0") == "1" or rules.get("pdf_accept_all", False)
 
     # 1) Handle PDFs first
     seen = set()
@@ -490,9 +535,7 @@ def crawl_seed(cur, competitor, line, url):
             dl_hash, dl_headers = get_pdf_hash(href)
 
         # Classify doc type (fallback to Brochure if override)
-        doc_kind = classify_pdf(f"{href} {text}")
-        if not doc_kind:
-            doc_kind = "Brochure" if archive_all else None
+        doc_kind = classify_pdf(f"{href} {text}") or ("Brochure" if archive_all else None)
         if not doc_kind:
             continue
 
@@ -547,6 +590,10 @@ def crawl_seed(cur, competitor, line, url):
             continue
 
         ptitle, sub_links = extract_links(ph, href)
+        embedded_sub = extract_embedded_links(ph, href)
+        if embedded_sub:
+            sub_links.extend((e, "") for e in sorted(embedded_sub))
+
         page_text = strip_main_text(ph)
 
         # Infer line from URL + text
@@ -591,9 +638,7 @@ def crawl_seed(cur, competitor, line, url):
             if h2 is None or not (h2.get("ETag") or h2.get("Last-Modified")):
                 dl_hash2, dl_headers2 = get_pdf_hash(pdf_url)
 
-            doc_kind2 = classify_pdf(f"{pdf_url} {sub_text}")
-            if not doc_kind2:
-                doc_kind2 = "Brochure" if archive_all else None
+            doc_kind2 = classify_pdf(f"{pdf_url} {sub_text}") or ("Brochure" if archive_all else None)
             if not doc_kind2:
                 continue
 
@@ -948,6 +993,9 @@ def sample_events_for_preview():
 def main():
     con = init_db()
     cur = con.cursor()
+
+    # Ensure archive structure exists
+    ensure_archive_tree()
 
     use_samples = os.getenv("SAMPLE_EVENTS") == "1"
     force_preview = os.getenv("WRITE_PREVIEW") == "1"
