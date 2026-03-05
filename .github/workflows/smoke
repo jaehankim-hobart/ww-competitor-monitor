@@ -1,0 +1,9 @@
+name: Smoke Test
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Smoke test at $(date -u
