@@ -1,16 +1,9 @@
 
-# monitor_warewashing.py (DEBUG VERSION)
-# ---------------------------------------------------------------------------
-# Debug version includes:
-# - LOG_LINKS=1 to print extracted <a> links from HTML
-# - ARCHIVE_ALL_PDFS=1 to archive EVERY .pdf found (ignores classification)
-# - Extra debug printouts in crawl logic
-# - Cross-host PDF discovery (CDNs/subdomains allowed for PDFs)
-# - Raw HTML PDF extraction (absolute + relative) on seeds and subpages
-# - Safer GET fallback for PDF downloads
-# - Embedded product link extraction (onclick/data-url/JS helpers)
-# - Optional UA override via UA_OVERRIDE
-# ---------------------------------------------------------------------------
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Competitor Monitor – Clean Version with Site Rules & Champion Line Inference
+"""
 
 import os
 import re
@@ -28,103 +21,33 @@ from bs4 import BeautifulSoup
 
 
 # -------------------
-# Debug helper
+# Lightweight logging
 # -------------------
 def dbg(msg: str):
-    """Lightweight debug print (enable with DEBUG_LOG=1)."""
-    if os.getenv("DEBUG_LOG", "1") == "1":
+    """Controlled debug print (enable with DEBUG_LOG=1)."""
+    if os.getenv("DEBUG_LOG", "0") == "1":
         print(msg)
 
 
-# --- add near other config loads (top of file) ---
-RULES_PATH = os.path.join(CONFIG_DIR, "site_rules.yaml")
-try:
-    SITE_RULES = load_yaml(RULES_PATH)
-except Exception:
-    SITE_RULES = {}
-
-def _compile_patterns(patts):
-    if not patts:
-        return []
-    if isinstance(patts, (list, tuple)):
-        return [re.compile(p) for p in patts]
-    return [re.compile(patts)]
-
-def _get_rules_for(competitor: str):
-    r = SITE_RULES.get(competitor, {}) or {}
-    return {
-        "host_allow": _compile_patterns(r.get("host_allow")),
-        "path_block": _compile_patterns(r.get("path_block")),
-        "page_allow": _compile_patterns(r.get("page_allow")),
-        "pdf_host_allow": _compile_patterns(r.get("pdf_host_allow")),
-        "line_patterns": {
-            k: _compile_patterns(v) for k, v in (r.get("line_patterns") or {}).items()
-        },
-        "pdf_path_line_hints": {k: re.compile(v) for k, v in (r.get("pdf_path_line_hints") or {}).items()}
-    }
-
-def _host_allowed(host_allow, netloc: str) -> bool:
-    return (not host_allow) or any(p.search(netloc) for p in host_allow)
-
-def _path_blocked(path_block, path: str) -> bool:
-    return any(p.search(path) for p in path_block)
-
-def _page_allowed(page_allow, path: str) -> bool:
-    return any(p.search(path) for p in page_allow)
-
-def infer_line_for_champion(url: str, anchor_text: str = "", page_text: str = "") -> tuple[str, float]:
-    """Return (line, confidence) using Champion-specific rules from site_rules.yaml."""
-    rules = _get_rules_for("Champion")
-    text = " ".join([url or "", anchor_text or "", page_text or ""])
-    # 1) PDF folder hints (highest confidence)
-    for line, rx in (rules["pdf_path_line_hints"] or {}).items():
-        if rx.search(url):
-            return line, 0.95
-    # 2) explicit line regex
-    scores = {}
-    for line, patt_list in (rules["line_patterns"] or {}).items():
-        for p in patt_list:
-            if p.search(text):
-                scores[line] = scores.get(line, 0) + 1
-    if scores:
-        best = max(scores, key=scores.get)
-        # confidence: normalized simple score
-        return best, min(0.90, 0.65 + 0.1 * scores[best])
-    return "Uncategorized", 0.0
-
-# --- replace the old looks_like_product_page with a rules-aware version ---
-def looks_like_product_page(url: str, competitor: str) -> bool:
-    u = urlparse(url)
-    path = u.path or "/"
-    # Global quick rejects
-    if any(x in url.lower() for x in ("/privacy", "/terms", "/sitemap", "/contact", "/search", "/careers")):
-        return False
-    # Per-competitor rules
-    r = _get_rules_for(competitor)
-    if r["path_block"] and _path_blocked(r["path_block"], path):
-        return False
-    if r["page_allow"]:
-        # Only allow what we explicitly whitelisted for this competitor
-        return _page_allowed(r["page_allow"], path)
-    # Fallback to original heuristic for competitors without site_rules
-    return any(x in url.lower() for x in ("/product", "/products/", "/our-products", "/rack", "/door", "/flight", "/dish", "/washer", "/categories/"))
-
-
 # -------------------
-# Config loading (YAML)
+# Config loading (YAML) and base paths
 # -------------------
 def load_yaml(path):
     import yaml
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-
 BASE_DIR = os.path.dirname(__file__)
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 
-COMP_CONF  = load_yaml(os.path.join(CONFIG_DIR, "competitors.yaml"))
-URLS_CONF  = load_yaml(os.path.join(CONFIG_DIR, "urls.yaml"))
-STYLE_CONF = load_yaml(os.path.join(CONFIG_DIR, "styling.yaml"))
+# Optional configs
+COMP_CONF = load_yaml(os.path.join(CONFIG_DIR, "competitors.yaml")) if os.path.exists(os.path.join(CONFIG_DIR, "competitors.yaml")) else {}
+URLS_CONF = load_yaml(os.path.join(CONFIG_DIR, "urls.yaml")) if os.path.exists(os.path.join(CONFIG_DIR, "urls.yaml")) else {}
+STYLE_CONF = load_yaml(os.path.join(CONFIG_DIR, "styling.yaml")) if os.path.exists(os.path.join(CONFIG_DIR, "styling.yaml")) else {}
+
+# New: per-site crawling/classification rules
+RULES_PATH = os.path.join(CONFIG_DIR, "site_rules.yaml")
+SITE_RULES = load_yaml(RULES_PATH) if os.path.exists(RULES_PATH) else {}
 
 # Safe fallbacks
 DEFAULT_COMPETITORS = [
@@ -135,38 +58,33 @@ DEFAULT_LINES = [
     "Door Type", "Undercounter", "Prep Washer",
     "Rack Conveyor", "Flight Type"
 ]
-
 COMPETITOR_COLS = COMP_CONF.get("competitors", DEFAULT_COMPETITORS)
-LINES_ORDER     = COMP_CONF.get("lines", DEFAULT_LINES)
-
+LINES_ORDER = COMP_CONF.get("lines", DEFAULT_LINES)
 DOOR, UNDER, PREP, RACK, FLIGHT = (
     "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
 )
 
-
 # -------------------
 # Styling defaults
 # -------------------
-EMAIL_STYLE       = STYLE_CONF.get("email", {})
+EMAIL_STYLE = STYLE_CONF.get("email", {}) if STYLE_CONF else {}
 EMAIL_FONT_FAMILY = EMAIL_STYLE.get("font_family", "Segoe UI, Arial, sans-serif")
-EMAIL_FONT_SIZE   = EMAIL_STYLE.get("font_size", "14px")
-EMAIL_HEADER_BG   = EMAIL_STYLE.get("header_bg", "#f3f3f3")
-EMAIL_HEADER_FG   = EMAIL_STYLE.get("header_fg", "#000000")
-EMAIL_BODY_BG     = EMAIL_STYLE.get("body_bg", "#ffffff")
-EMAIL_BORDER_CLR  = EMAIL_STYLE.get("border_color", "#dddddd")
-EMAIL_CELL_PAD    = EMAIL_STYLE.get("cell_padding", "6")
-EMAIL_COL_WIDTH   = EMAIL_STYLE.get("column_width", "180px")
-EMAIL_UPDATE_BG   = EMAIL_STYLE.get("update_bg", "#FFFFE0")
-
+EMAIL_FONT_SIZE = EMAIL_STYLE.get("font_size", "14px")
+EMAIL_HEADER_BG = EMAIL_STYLE.get("header_bg", "#f3f3f3")
+EMAIL_HEADER_FG = EMAIL_STYLE.get("header_fg", "#000000")
+EMAIL_BODY_BG = EMAIL_STYLE.get("body_bg", "#ffffff")
+EMAIL_BORDER_CLR = EMAIL_STYLE.get("border_color", "#dddddd")
+EMAIL_CELL_PAD = EMAIL_STYLE.get("cell_padding", "6")
+EMAIL_COL_WIDTH = EMAIL_STYLE.get("column_width", "180px")
+EMAIL_UPDATE_BG = EMAIL_STYLE.get("update_bg", "#FFFFE0")
 
 # -------------------
 # Archiving configuration
 # -------------------
-ARCHIVE_DIR        = os.getenv("ARCHIVE_DIR", "archive")
-GITHUB_REPOSITORY  = os.getenv("GITHUB_REPOSITORY", "")
-GITHUB_REF_NAME    = os.getenv("GITHUB_REF_NAME", "main")
-BOOTSTRAP          = os.getenv("BOOTSTRAP_ARCHIVE") == "1"
-
+ARCHIVE_DIR = os.getenv("ARCHIVE_DIR", "archive")
+GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "")
+GITHUB_REF_NAME = os.getenv("GITHUB_REF_NAME", "main")
+BOOTSTRAP = os.getenv("BOOTSTRAP_ARCHIVE") == "1"
 
 # -------------------
 # Build N/A matrix from urls.yaml
@@ -174,7 +92,7 @@ BOOTSTRAP          = os.getenv("BOOTSTRAP_ARCHIVE") == "1"
 def build_na_map():
     na = {line: {c: False for c in COMPETITOR_COLS} for line in LINES_ORDER}
     for comp in COMPETITOR_COLS:
-        comp_lines = URLS_CONF.get(comp, {})
+        comp_lines = URLS_CONF.get(comp, {}) if URLS_CONF else {}
         for line in LINES_ORDER:
             urls = comp_lines.get(line, None)
             if isinstance(urls, list) and len(urls) == 0:
@@ -183,7 +101,7 @@ def build_na_map():
 
 
 # -------------------
-# HTML link helper
+# HTML link helpers
 # -------------------
 def a(href: str, label: str) -> str:
     href = href or "#"
@@ -191,10 +109,6 @@ def a(href: str, label: str) -> str:
     return f'<a href="{href}">{label}</a>'
 
 
-
-# -------------------
-# Display helpers
-# -------------------
 def display_url_label(href: str, max_len: int = 60) -> str:
     try:
         u = urlparse(href)
@@ -211,17 +125,15 @@ def display_url_label(href: str, max_len: int = 60) -> str:
         return href
 
 
-ACRONYM_KEEP = {"PRO","VHR","ER","HT","LT","HR","ADA","NSF","UL"}
-
+ACRONYM_KEEP = {"PRO", "VHR", "ER", "HT", "LT", "HR", "ADA", "NSF", "UL"}
 def beautify_filename(url_or_name: str) -> str:
     name = unquote(url_or_name.split("?")[0].split("#")[0].split("/")[-1])
     name = re.sub(r"\.pdf$", "", name, flags=re.I)
     name = re.sub(r"[_\-]+", " ", name)
-    name = re.sub(r"\b(spec(\.?|ification)?\s*sheet)\b", "Spec Sheet", name, flags=re.I)
+    name = re.sub(r"\b(spec(?:\.?ification)?\s*sheet)\b", "Spec Sheet", name, flags=re.I)
     name = re.sub(r"\bdata\s*sheet|datasheet\b", "Data Sheet", name, flags=re.I)
     name = re.sub(r"\b(brochure|sales\s*sheet|sell\s*sheet|flyer)\b", "Brochure", name, flags=re.I)
     name = re.sub(r"\s{2,}", " ", name).strip()
-
     words = []
     for w in name.split(" "):
         if w.isupper() and len(w) <= 5:
@@ -235,13 +147,13 @@ def beautify_filename(url_or_name: str) -> str:
 
 
 # -------------------
-# PDF patterns (debug: broader)
+# PDF patterns & classification
 # -------------------
 PDF_PATTERNS = re.compile(
-    r"(spec(?:ification)?[\s\-]?sheet|specsheet|data[\s\-]?sheet|datasheet|"
-    r"cut[\s\-]?sheet|cutsheet|sell[\s\-]?sheet|sales[\s\-]?sheet|"
-    r"product[\s\-]?sheet|product[\s\-]?data|technical[\s\-]?data|tech[\s\-]?data|"
-    r"brochure|flyer)",
+    r"(spec(?:ification)?[\s\-]?sheet|specsheet|"
+    r"data[\s\-]?sheet|datasheet|product[\s\-]?data|technical[\s\-]?data|tech[\s\-]?data|"
+    r"cut[\s\-]?sheet|cutsheet|"
+    r"brochure|flyer|sales[\s\-]?sheet|sell[\s\-]?sheet)",
     re.I
 )
 
@@ -251,7 +163,7 @@ def classify_pdf(text_or_url: str):
         return "Spec Sheet"
     if re.search(r"data[\s\-]?sheet|datasheet|product[\s\-]?data|technical[\s\-]?data|tech[\s\-]?data", s, re.I):
         return "Data Sheet"
-    if re.search(r"brochure|sell[\s\-]?sheet|sales[\s\-]?sheet|flyer|product[\s\-]?sheet", s, re.I):
+    if re.search(r"brochure|sales[\s\-]?sheet|sell[\s\-]?sheet|flyer|product[\s\-]?sheet", s, re.I):
         return "Brochure"
     return None
 
@@ -266,28 +178,28 @@ def init_db():
     cur = con.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS resources(
-        url TEXT PRIMARY KEY,
-        competitor TEXT,
-        line TEXT,
-        kind TEXT,
-        last_modified TEXT,
-        etag TEXT,
-        hash TEXT,
-        title TEXT,
-        first_seen TEXT,
-        last_seen TEXT
+      url TEXT PRIMARY KEY,
+      competitor TEXT,
+      line TEXT,
+      kind TEXT,
+      last_modified TEXT,
+      etag TEXT,
+      hash TEXT,
+      title TEXT,
+      first_seen TEXT,
+      last_seen TEXT
     )
     """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS events(
-        ts TEXT,
-        competitor TEXT,
-        line TEXT,
-        url TEXT,
-        what TEXT,
-        change TEXT,
-        archived_path TEXT,
-        archived_url TEXT
+      ts TEXT,
+      competitor TEXT,
+      line TEXT,
+      url TEXT,
+      what TEXT,
+      change TEXT,
+      archived_path TEXT,
+      archived_url TEXT
     )
     """)
     con.commit()
@@ -295,12 +207,12 @@ def init_db():
 
 def get_existing_resource(cur, url):
     cur.execute("""
-        SELECT url, competitor, line, kind, last_modified, etag, hash, title
-        FROM resources WHERE url=?
+    SELECT url, competitor, line, kind, last_modified, etag, hash, title
+    FROM resources WHERE url=?
     """, (url,))
     row = cur.fetchone()
     if row:
-        keys = ["url","competitor","line","kind","last_modified","etag","hash","title"]
+        keys = ["url", "competitor", "line", "kind", "last_modified", "etag", "hash", "title"]
         return dict(zip(keys, row))
     return None
 
@@ -308,21 +220,19 @@ def record_resource(cur, url, competitor, line, kind, headers, content_hash, tit
     prev = get_existing_resource(cur, url)
     cur.execute("SELECT last_modified, etag, hash FROM resources WHERE url=?", (url,))
     row = cur.fetchone()
-
     now = datetime.now(timezone.utc).isoformat()
     last_mod = headers.get("Last-Modified") if headers else None
-    etag     = headers.get("ETag") if headers else None
+    etag = headers.get("ETag") if headers else None
 
     if row is None:
         cur.execute("""
-            INSERT INTO resources(url, competitor, line, kind, last_modified, etag, hash, title, first_seen, last_seen)
-            VALUES(?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO resources(url, competitor, line, kind, last_modified, etag, hash, title, first_seen, last_seen)
+        VALUES(?,?,?,?,?,?,?,?,?,?)
         """, (url, competitor, line, kind, last_mod, etag, content_hash, title, now, now))
         return "added", prev
 
     prev_mod, prev_etag, prev_hash = row
     changed = False
-
     if (last_mod and last_mod != prev_mod) or (etag and etag != prev_etag):
         changed = True
     if content_hash and prev_hash and content_hash != prev_hash:
@@ -330,10 +240,10 @@ def record_resource(cur, url, competitor, line, kind, headers, content_hash, tit
 
     if changed:
         cur.execute("""
-            UPDATE resources
-            SET last_modified=?, etag=?, hash=?, title=?, last_seen=?
-            WHERE url=?
-        """, (last_mod, etag, content_hash or prev_hash, title, now, url))
+        UPDATE resources
+        SET last_modified=?, etag=?, hash=?, title=?, last_seen=?, line=?
+        WHERE url=?
+        """, (last_mod, etag, content_hash or prev_hash, title, now, line, url))
         return "updated", prev
 
     cur.execute("UPDATE resources SET last_seen=? WHERE url=?", (now, url))
@@ -359,7 +269,9 @@ def safe_request(method, url):
         return None
 
 def sha256_bytes(b: bytes) -> str:
-    h = hashlib.sha256(); h.update(b); return h.hexdigest()
+    h = hashlib.sha256()
+    h.update(b)
+    return h.hexdigest()
 
 def get_html(url):
     r = safe_request("GET", url)
@@ -378,7 +290,7 @@ def get_pdf_hash(url):
 def extract_links(html, base):
     soup = BeautifulSoup(html, "lxml")
     links = []
-    title = (soup.title.string.strip() if soup.title else "")
+    title = (soup.title.string.strip() if soup.title and soup.title.string else "")
     for a_tag in soup.find_all("a", href=True):
         href = urljoin(base, a_tag["href"])
         text = (a_tag.get_text(" ", strip=True) or "")
@@ -390,7 +302,7 @@ def is_pdf(url):
 
 def strip_main_text(html):
     soup = BeautifulSoup(html, "lxml")
-    for tag in soup(["nav","header","footer","script","style","noscript","svg"]):
+    for tag in soup(["nav", "header", "footer", "script", "style", "noscript", "svg"]):
         tag.decompose()
     txt = soup.get_text(" ", strip=True)
     return " ".join(txt.split())[:20000]
@@ -409,15 +321,12 @@ def archive_pdf(competitor: str, line: str, url: str, content: bytes, display_na
     """
     safe_comp = re.sub(r"[\\/]+", "_", competitor).strip()
     safe_line = re.sub(r"[\\/]+", "_", line).strip()
-
     subdir = os.path.join(ARCHIVE_DIR, safe_comp, safe_line)
     ensure_dir(subdir)
-
     date_str = datetime.now().strftime("%Y-%m-%d")
     base_name = re.sub(r"[^\w\- \.\(\)]+", "_", display_name).strip()
     fname = f"{date_str}__{base_name}__sha256_{sha_hex[:8]}.pdf"
     fpath = os.path.join(subdir, fname)
-
     with open(fpath, "wb") as f:
         f.write(content)
     return fpath
@@ -429,14 +338,88 @@ def build_github_raw_url(repo: str, branch: str, local_path: str) -> str:
 
 
 # -------------------
-# Crawl logic (DEBUG)
+# Site rules (generic) + line inference
 # -------------------
-def looks_like_product_page(url):
-    bad = ("/privacy", "/terms", "/sitemap", "/contact", "/search", "/news", "/blog", "/careers")
-    if any(x in url.lower() for x in bad): return False
-    return any(x in url.lower() for x in (
-        "/product", "/products/", "/our-products", "/rack", "/door", "/flight", "/dish", "/washer", "/categories/"
-    ))
+def _compile_patterns(patts):
+    if not patts:
+        return []
+    if isinstance(patts, (list, tuple)):
+        return [re.compile(p) for p in patts]
+    return [re.compile(patts)]
+
+def _get_rules_for(competitor: str):
+    r = SITE_RULES.get(competitor, {}) or {}
+    return {
+        "host_allow": _compile_patterns(r.get("host_allow")),
+        "path_block": _compile_patterns(r.get("path_block")),
+        "page_allow": _compile_patterns(r.get("page_allow")),
+        "pdf_host_allow": _compile_patterns(r.get("pdf_host_allow")),
+        "line_patterns": {k: _compile_patterns(v) for k, v in (r.get("line_patterns") or {}).items()},
+        "pdf_path_line_hints": {k: re.compile(v) for k, v in (r.get("pdf_path_line_hints") or {}).items()},
+    }
+
+def _host_allowed(host_allow, netloc: str) -> bool:
+    return (not host_allow) or any(p.search(netloc) for p in host_allow)
+
+def _path_blocked(path_block, path: str) -> bool:
+    return any(p.search(path) for p in path_block)
+
+def _page_allowed(page_allow, path: str) -> bool:
+    return any(p.search(path) for p in page_allow)
+
+def looks_like_product_page(url: str, competitor: str) -> bool:
+    """Rules-aware product-page decision."""
+    u = urlparse(url)
+    path = u.path or "/"
+
+    # Quick rejects
+    if any(x in url.lower() for x in ("/privacy", "/terms", "/sitemap", "/contact", "/search", "/careers")):
+        return False
+
+    rules = _get_rules_for(competitor)
+    if rules["path_block"] and _path_blocked(rules["path_block"], path):
+        return False
+    if rules["page_allow"]:
+        # For competitors with rules, only follow allowed page patterns
+        return _page_allowed(rules["page_allow"], path)
+
+    # Fallback heuristic (for competitors without site_rules.yaml)
+    return any(x in url.lower() for x in ("/product", "/products/", "/our-products", "/rack", "/door", "/flight", "/dish", "/washer", "/categories/"))
+
+def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor: str) -> tuple[str, float]:
+    """
+    Generic line inference using site_rules.yaml.
+    Returns (line, confidence). If no rules/ match -> ("Uncategorized", 0.0)
+    """
+    rules = _get_rules_for(competitor)
+    if not rules["line_patterns"] and not rules["pdf_path_line_hints"]:
+        return "Uncategorized", 0.0
+
+    text = " ".join([url or "", anchor_text or "", page_text or ""])
+
+    # 1) PDF folder hints (if configured) – stronger signal
+    for line, rx in (rules["pdf_path_line_hints"] or {}).items():
+        if rx.search(url):
+            return line, 0.90
+
+    # 2) Explicit patterns from line_patterns
+    scores = {}
+    for line, patt_list in (rules["line_patterns"] or {}).items():
+        for p in patt_list:
+            if p.search(text):
+                scores[line] = scores.get(line, 0) + 1
+    if scores:
+        best = max(scores, key=scores.get)
+        return best, min(0.95, 0.80 + 0.05 * scores[best])
+
+    return "Uncategorized", 0.0
+
+
+# -------------------
+# Crawl logic
+# -------------------
+ABS_PDF_RX = re.compile(r'https?://[^"\'<>]+?\.pdf(?:\?[^"\'<>]*)?', re.I)
+REL_PDF_RX = re.compile(r'(?:(?:\./|\../|/)[^"\'<>\s]+?\.pdf(?:\?[^"\'<>\s]*)?)', re.I)
 
 def crawl_seed(cur, competitor, line, url):
     html, headers = get_html(url)
@@ -448,39 +431,9 @@ def crawl_seed(cur, competitor, line, url):
     title, links = extract_links(html, url)
     print(f"[CRAWL] {competitor} | {line} | {url} -> {len(links)} links")
 
-    if os.getenv("LOG_LINKS", "0") == "1":
-        for i, (lhref, ltext) in enumerate(links[:30]):
-            print(f"   [LINK {i+1:02d}] {lhref}  |  {ltext[:120]}")
-
-    # --- Add embedded product URLs that are not in <a href> ---
-    embedded_links = set()
-
-    # onclick="location.href='...'" or onclick="window.location='...'"
-    for m in re.finditer(r'onclick\s*=\s*"(?:location\.href|window\.location)\s*=\s*[\'"]([^\'"]+)[\'"]', html, re.I):
-        embedded_links.add(urljoin(url, m.group(1)))
-    for m in re.finditer(r"onclick\s*=\s*'(?:location\.href|window\.location)\s*=\s*[\"']([^\"']+)[\"']", html, re.I):
-        embedded_links.add(urljoin(url, m.group(1)))
-
-    # data-url="/path/to/product/"
-    for m in re.finditer(r'data-url\s*=\s*"([^"]+)"', html, re.I):
-        embedded_links.add(urljoin(url, m.group(1)))
-    for m in re.finditer(r"data-url\s*=\s*'([^']+)'", html, re.I):
-        embedded_links.add(urljoin(url, m.group(1)))
-
-    # JS helpers like goToProduct('/path/...') or openProduct("...")
-    for m in re.finditer(r'(?:goToProduct|openProduct)\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', html, re.I):
-        embedded_links.add(urljoin(url, m.group(1)))
-
-    if embedded_links:
-        print(f"[CRAWL] {competitor} | {line} | {url} -> +{len(embedded_links)} embedded product links")
-        for eurl in sorted(embedded_links):
-            links.append((eurl, ""))  # treat same as normal anchors
-
-    # Record the seed page itself (as a product/category page)
-    change, _ = record_resource(
-        cur, url, competitor, line, "html",
-        headers, sha256_bytes(strip_main_text(html).encode("utf-8")), title
-    )
+    # Record the seed page (category page)
+    content_hash = sha256_bytes(strip_main_text(html).encode("utf-8"))
+    change, _ = record_resource(cur, url, competitor, line, "html", headers, content_hash, title)
     if change in ("added", "updated"):
         results.append({
             "competitor": competitor, "line": line, "url": url,
@@ -488,126 +441,89 @@ def crawl_seed(cur, competitor, line, url):
             "old_url": None, "archived_path": None, "archived_url": None
         })
 
-    # Build anchor text map to help classify PDFs when only filenames exist
+    # Anchor text map (helps classify PDFs by nearby text)
     link_text_map = {}
     for href, text in links:
         if href not in link_text_map:
             link_text_map[href] = text or ""
 
-# in crawl_seed(), right before we process PDFs:
-host = urlparse(url).netloc
-rules = _get_rules_for(competitor)
-
-# 1) Filter PDF candidates by allowed host (Champion-tight, others unchanged)
-pdf_candidates_filtered = set()
-for href in pdf_candidates:
-    h = urlparse(href).netloc
-    if _host_allowed(rules["pdf_host_allow"], h):
-        pdf_candidates_filtered.add(href)
-pdf_candidates = pdf_candidates_filtered or pdf_candidates  # fallback if no rules
-
-# ... when iterating PDFs (both on seed and subpages), infer correct product line:
-line_for_archive, conf = infer_line_for_champion(href, link_text_map.get(href, ""), "")
-use_line = line_for_archive if conf >= 0.6 else line  # keep seed line if low confidence
-
-change, prev_row = record_resource(cur, href, competitor, use_line, "pdf", dl_headers, dl_hash, text)
-# and pass `use_line` to archive_pdf(...)
-archived_path = archive_pdf(competitor, use_line, href, pdf_bytes, disp_name, sha_now)
-
-# 2) Subpage follow: use rules-aware looks_like_product_page
-for href, text in links:
-    if href in seen:
-        continue
-    if urlparse(href).netloc != host:
-        continue
-    if looks_like_product_page(href, competitor):
-        ph, ph_headers = get_html(href)
-        if not ph:
-            # ...
-            continue
-        ptitle, sub_links = extract_links(ph, href)
-        page_text = strip_main_text(ph)
-        # infer line again for page classification
-        page_line, lconf = infer_line_for_champion(href, text, page_text)
-        use_line = page_line if lconf >= 0.6 else line
-        content_hash = sha256_bytes(page_text.encode("utf-8"))
-        change, _ = record_resource(cur, href, competitor, use_line, "html", ph_headers, content_hash, ptitle)
-        # ...
-
-    # Discover PDFs in seed HTML (absolute + relative) + anchor href PDFs
+    # Discover PDFs in seed HTML (absolute/relative) + anchor href PDFs
     pdf_candidates = set()
-    # Absolute URLs: https://...pdf
-    for m in re.finditer(r'https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?', html, re.I):
+
+    for m in ABS_PDF_RX.finditer(html):
         pdf_candidates.add(urljoin(url, m.group(0)))
-    # Relative URLs: /file.pdf or ./file.pdf or ../file.pdf
-    for m in re.finditer(r'(?:(?:\./|\../|/)[^"\'<>\s]+\.pdf(?:\?[^\s"\'<>]*)?)', html, re.I):
+    for m in REL_PDF_RX.finditer(html):
         pdf_candidates.add(urljoin(url, m.group(0)))
-    # Merge anchor href PDFs
     for href, _ in links:
         if is_pdf(href):
             pdf_candidates.add(href)
 
-    print(f"[CRAWL] {competitor} | {line} | {url} -> {len(pdf_candidates)} pdf-candidates")
-    if pdf_candidates:
-        for i, cand in enumerate(sorted(list(pdf_candidates))[:20]):
-            print(f"   [PDF CAND {i+1:02d}] {cand}")
-
     host = urlparse(url).netloc
-    seen = set()
+    rules = _get_rules_for(competitor)
+
+    # Restrict PDFs to allowed hosts (for Champion and any future rules)
+    filtered_pdf_candidates = set()
+    for href in pdf_candidates:
+        h = urlparse(href).netloc
+        if _host_allowed(rules["pdf_host_allow"], h):
+            filtered_pdf_candidates.add(href)
+    if filtered_pdf_candidates:
+        pdf_candidates = filtered_pdf_candidates
 
     archive_all = os.getenv("ARCHIVE_ALL_PDFS", "0") == "1"
 
-    # 1) Handle PDFs first (cross-host allowed)
+    # 1) Handle PDFs first
+    seen = set()
     for href in sorted(pdf_candidates):
         if href in seen:
             continue
         seen.add(href)
-
         text = link_text_map.get(href, "")
 
-        # Accept if override or pattern-match
-        if not archive_all:
-            if not (PDF_PATTERNS.search(href) or PDF_PATTERNS.search(text)):
-                continue
+        if not archive_all and not (PDF_PATTERNS.search(href) or PDF_PATTERNS.search(text)):
+            continue
 
-        # Try HEAD; fallback to GET for hash/headers
+        # HEAD → fallback GET for hash/headers
         h = head(href)
         dl_hash, dl_headers = (None, h)
         if h is None or not (h.get("ETag") or h.get("Last-Modified")):
             dl_hash, dl_headers = get_pdf_hash(href)
 
-        # Classify (fallback to Brochure under override)
-        doc_kind = classify_pdf(href + " " + text)
+        # Classify doc type (fallback to Brochure if override)
+        doc_kind = classify_pdf(f"{href} {text}")
         if not doc_kind:
             doc_kind = "Brochure" if archive_all else None
         if not doc_kind:
             continue
 
-        change, prev_row = record_resource(cur, href, competitor, line, "pdf", dl_headers, dl_hash, text)
+        # Infer product line via rules
+        inferred_line, conf = infer_line_via_rules(href, text, "", competitor)
+        use_line = inferred_line if conf >= 0.60 else line
+
+        change, prev_row = record_resource(cur, href, competitor, use_line, "pdf", dl_headers, dl_hash, text)
         if change in ("added", "updated"):
             # Download and archive
             pdf_resp = safe_request("GET", href)
             pdf_bytes = pdf_resp.content if pdf_resp else None
             if pdf_bytes is None:
-                # Retry once in case of transient failures
+                # Retry once
                 pdf_resp = safe_request("GET", href)
                 pdf_bytes = pdf_resp.content if pdf_resp else None
 
             disp_name = beautify_filename(href or text or "document.pdf")
-            sha_now   = sha256_bytes(pdf_bytes) if pdf_bytes else (dl_hash or "nohash")
+            sha_now = sha256_bytes(pdf_bytes) if pdf_bytes else (dl_hash or "nohash")
 
             archived_path = None
-            archived_url  = None
+            archived_url = None
             if pdf_bytes:
-                archived_path = archive_pdf(competitor, line, href, pdf_bytes, disp_name, sha_now)
+                archived_path = archive_pdf(competitor, use_line, href, pdf_bytes, disp_name, sha_now)
                 if GITHUB_REPOSITORY:
                     archived_url = build_github_raw_url(GITHUB_REPOSITORY, GITHUB_REF_NAME, archived_path)
 
-            print(f"[ARCHIVE] {competitor} | {line} | {disp_name} -> {archived_path or 'NO BYTES'}")
-
+            print(f"[ARCHIVE] {competitor} | {use_line} | {disp_name} -> {archived_path or 'NO BYTES'}")
             results.append({
                 "competitor": competitor,
-                "line": line,
+                "line": use_line,
                 "url": href,
                 "what": doc_kind,
                 "change": change,
@@ -616,127 +532,119 @@ for href, text in links:
                 "archived_path": archived_path
             })
 
-    # 2) Crawl product pages (same-host only) one hop
+    # 2) Crawl product pages (same-host only) one hop, with rules-aware filter
     for href, text in links:
-        if href in seen:
+        u = urlparse(href)
+        if u.netloc != host:
             continue
-        if urlparse(href).netloc != host:
+
+        if not looks_like_product_page(href, competitor):
             continue
-        if looks_like_product_page(href):
-            ph, ph_headers = get_html(href)
-            if not ph:
-                print(f"[CRAWL] NO HTML (subpage) for {href}")
+
+        ph, ph_headers = get_html(href)
+        if not ph:
+            print(f"[CRAWL] NO HTML (subpage) for {href}")
+            continue
+
+        ptitle, sub_links = extract_links(ph, href)
+        page_text = strip_main_text(ph)
+
+        # Infer line from URL + text
+        inferred_line, conf = infer_line_via_rules(href, text, page_text, competitor)
+        use_line = inferred_line if conf >= 0.60 else line
+
+        # Record the subpage itself
+        content_hash = sha256_bytes(page_text.encode("utf-8"))
+        change, _ = record_resource(cur, href, competitor, use_line, "html", ph_headers, content_hash, ptitle)
+        if change in ("added", "updated"):
+            results.append({
+                "competitor": competitor, "line": use_line, "url": href,
+                "what": "Product page", "change": change,
+                "old_url": None, "archived_path": None, "archived_url": None
+            })
+
+        # Discover PDFs on the subpage
+        sub_pdf_candidates = set()
+        for m in ABS_PDF_RX.finditer(ph):
+            sub_pdf_candidates.add(urljoin(href, m.group(0)))
+        for m in REL_PDF_RX.finditer(ph):
+            sub_pdf_candidates.add(urljoin(href, m.group(0)))
+        for sub_href, _ in sub_links:
+            if is_pdf(sub_href):
+                sub_pdf_candidates.add(sub_href)
+
+        # Apply allowed PDF hosts
+        filtered_sub_pdf_candidates = set()
+        for pdf_url in sub_pdf_candidates:
+            if _host_allowed(rules["pdf_host_allow"], urlparse(pdf_url).netloc):
+                filtered_sub_pdf_candidates.add(pdf_url)
+        if filtered_sub_pdf_candidates:
+            sub_pdf_candidates = filtered_sub_pdf_candidates
+
+        for pdf_url in sorted(sub_pdf_candidates):
+            sub_text = ""
+            if not archive_all and not (PDF_PATTERNS.search(pdf_url) or PDF_PATTERNS.search(sub_text)):
                 continue
 
-            # Extract links from the subpage
-            ptitle, sub_links = extract_links(ph, href)
+            h2 = head(pdf_url)
+            dl_hash2, dl_headers2 = (None, h2)
+            if h2 is None or not (h2.get("ETag") or h2.get("Last-Modified")):
+                dl_hash2, dl_headers2 = get_pdf_hash(pdf_url)
 
-            # Record the subpage itself as an HTML resource
-            content_hash = sha256_bytes(strip_main_text(ph).encode("utf-8"))
-            change, _ = record_resource(cur, href, competitor, line, "html", ph_headers, content_hash, ptitle)
-            if change in ("added","updated"):
-                results.append({
-                    "competitor": competitor, "line": line, "url": href,
-                    "what": "Product page", "change": change,
-                    "old_url": None, "archived_path": None, "archived_url": None
-                })
+            doc_kind2 = classify_pdf(f"{pdf_url} {sub_text}")
+            if not doc_kind2:
+                doc_kind2 = "Brochure" if archive_all else None
+            if not doc_kind2:
+                continue
 
-            # --- Discover PDFs on the subpage (absolute + relative) + anchor href PDFs ---
-            sub_pdf_candidates = set()
+            # Infer product line for archive folder
+            page_line2, lconf2 = infer_line_via_rules(pdf_url, sub_text, "", competitor)
+            use_line2 = page_line2 if lconf2 >= 0.60 else use_line
 
-            # Absolute URLs on subpage
-            for m in re.finditer(r'https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?', ph, re.I):
-                sub_pdf_candidates.add(urljoin(href, m.group(0)))
-
-            # Relative URLs on subpage
-            for m in re.finditer(r'(?:(?:\./|\../|/)[^"\'<>\s]+\.pdf(?:\?[^\s"\'<>]*)?)', ph, re.I):
-                sub_pdf_candidates.add(urljoin(href, m.group(0)))
-
-            # Anchor href PDFs on subpage
-            for sub_href, _ in sub_links:
-                if is_pdf(sub_href):
-                    sub_pdf_candidates.add(sub_href)
-
-            if sub_pdf_candidates:
-                print(f"[CRAWL:SUB] PDFs on {href} -> {len(sub_pdf_candidates)} candidates")
-                for i, cand in enumerate(sorted(list(sub_pdf_candidates))[:20]):
-                    print(f"   [SUB PDF CAND {i+1:02d}] {cand}")
-
-            # Process subpage PDF candidates (allow ARCHIVE_ALL_PDFS override)
-            for pdf_url in sorted(sub_pdf_candidates):
-                if pdf_url in seen:
-                    continue
-                seen.add(pdf_url)
-
-                sub_text = ""  # anchor text on subpage typically not needed
-
-                # Accept if override or pattern-match
-                if not archive_all:
-                    if not (PDF_PATTERNS.search(pdf_url) or PDF_PATTERNS.search(sub_text)):
-                        continue
-
-                # HEAD -> fallback GET for hash/headers
-                h2 = head(pdf_url)
-                dl_hash2, dl_headers2 = (None, h2)
-                if h2 is None or not (h2.get("ETag") or h2.get("Last-Modified")):
-                    dl_hash2, dl_headers2 = get_pdf_hash(pdf_url)
-
-                # Classify (fallback to Brochure under override)
-                doc_kind2 = classify_pdf(pdf_url + " " + sub_text)
-                if not doc_kind2:
-                    doc_kind2 = "Brochure" if archive_all else None
-                if not doc_kind2:
-                    continue
-
-                ch2, prev_row2 = record_resource(cur, pdf_url, competitor, line, "pdf", dl_headers2, dl_hash2, sub_text)
-                if ch2 in ("added", "updated"):
-                    # Download & archive
+            ch2, prev_row2 = record_resource(cur, pdf_url, competitor, use_line2, "pdf", dl_headers2, dl_hash2, sub_text)
+            if ch2 in ("added", "updated"):
+                pdf_resp2 = safe_request("GET", pdf_url)
+                pdf_bytes2 = pdf_resp2.content if pdf_resp2 else None
+                if pdf_bytes2 is None:
                     pdf_resp2 = safe_request("GET", pdf_url)
                     pdf_bytes2 = pdf_resp2.content if pdf_resp2 else None
-                    if pdf_bytes2 is None:
-                        # Retry once for transient issues
-                        pdf_resp2 = safe_request("GET", pdf_url)
-                        pdf_bytes2 = pdf_resp2.content if pdf_resp2 else None
 
-                    disp_name2 = beautify_filename(pdf_url or "document.pdf")
-                    sha_now2 = sha256_bytes(pdf_bytes2) if pdf_bytes2 else (dl_hash2 or "nohash")
+                disp_name2 = beautify_filename(pdf_url or "document.pdf")
+                sha_now2 = sha256_bytes(pdf_bytes2) if pdf_bytes2 else (dl_hash2 or "nohash")
 
-                    archived_path2 = None
-                    archived_url2  = None
-                    if pdf_bytes2:
-                        archived_path2 = archive_pdf(competitor, line, pdf_url, pdf_bytes2, disp_name2, sha_now2)
-                        if GITHUB_REPOSITORY:
-                            archived_url2 = build_github_raw_url(GITHUB_REPOSITORY, GITHUB_REF_NAME, archived_path2)
+                archived_path2 = None
+                archived_url2 = None
+                if pdf_bytes2:
+                    archived_path2 = archive_pdf(competitor, use_line2, pdf_url, pdf_bytes2, disp_name2, sha_now2)
+                    if GITHUB_REPOSITORY:
+                        archived_url2 = build_github_raw_url(GITHUB_REPOSITORY, GITHUB_REF_NAME, archived_path2)
 
-                    print(f"[ARCHIVE:SUB] {competitor} | {line} | {disp_name2} -> {archived_path2 or 'NO BYTES'}")
-
-                    results.append({
-                        "competitor": competitor,
-                        "line": line,
-                        "url": pdf_url,
-                        "what": doc_kind2,
-                        "change": ch2,
-                        "old_url": prev_row2["url"] if (prev_row2 and ch2 == "updated") else None,
-                        "archived_url": archived_url2,
-                        "archived_path": archived_path2
-                    })
+                print(f"[ARCHIVE:SUB] {competitor} | {use_line2} | {disp_name2} -> {archived_path2 or 'NO BYTES'}")
+                results.append({
+                    "competitor": competitor,
+                    "line": use_line2,
+                    "url": pdf_url,
+                    "what": doc_kind2,
+                    "change": ch2,
+                    "old_url": prev_row2["url"] if (prev_row2 and ch2 == "updated") else None,
+                    "archived_url": archived_url2,
+                    "archived_path": archived_path2
+                })
 
     return results
 
 
 def crawl_all(cur):
     events = []
-    # Print seed summary for visibility
     print("[SEEDS] Starting crawl across competitors/lines")
-    for competitor, lines in URLS_CONF.items():
+    for competitor, lines in (URLS_CONF or {}).items():
         for line in LINES_ORDER:
             urls = lines.get(line, []) or []
             for url in urls:
                 print(f"[SEED] {competitor} | {line} | {url}")
                 evs = crawl_seed(cur, competitor, line, url)
                 events.extend(evs)
-                # Politeness delay
-                time.sleep(0.3)
+                time.sleep(0.3)  # politeness delay
     print(f"[SEEDS] Crawl finished with {len(events)} events")
     return events
 
@@ -745,18 +653,16 @@ def crawl_all(cur):
 # Pivot for email table
 # -------------------
 def pivot_for_table(all_events):
-    competitors = COMPETITOR_COLS[:]  # fixed order you provided
+    competitors = COMPETITOR_COLS[:]  # fixed order
     extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
     competitors += [c for c in sorted(set(extras))]
-
     table = {line: {c: [] for c in competitors} for line in LINES_ORDER}
     na_map = build_na_map()
-
     for e in all_events:
         c, line, what, change = e["competitor"], e["line"], e["what"], e["change"]
-        if what in ("Spec Sheet","Brochure","Data Sheet"):
+        if what in ("Spec Sheet", "Brochure", "Data Sheet"):
             if change == "updated":
-                old_href  = e.get("archived_url") or e.get("old_url") or e["url"]
+                old_href = e.get("archived_url") or e.get("old_url") or e["url"]
                 old_label = "Archived prior version" if e.get("archived_url") else "Old version"
                 label = (
                     f'{what} updated: '
@@ -778,11 +684,11 @@ def pivot_for_table(all_events):
 # -------------------
 def line_icon_name(line: str):
     m = {
-        "Door Type":      ("doortype.png",     os.path.join("assets", "doortype.png")),
-        "Undercounter":   ("undercounter.png", os.path.join("assets", "undercounter.png")),
-        "Prep Washer":    ("prepwasher.png",   os.path.join("assets", "prepwasher.png")),
-        "Rack Conveyor":  ("rackconveyor.png", os.path.join("assets", "rackconveyor.png")),
-        "Flight Type":    ("flighttype.png",   os.path.join("assets", "flighttype.png")),
+        "Door Type": ("doortype.png", os.path.join("assets", "doortype.png")),
+        "Undercounter": ("undercounter.png", os.path.join("assets", "undercounter.png")),
+        "Prep Washer": ("prepwasher.png", os.path.join("assets", "prepwasher.png")),
+        "Rack Conveyor": ("rackconveyor.png", os.path.join("assets", "rackconveyor.png")),
+        "Flight Type": ("flighttype.png", os.path.join("assets", "flighttype.png")),
     }
     return m.get(line, ("", ""))
 
@@ -793,11 +699,10 @@ def line_icon_name(line: str):
 def compose_email(all_events):
     """
     Build the subject + HTML body:
-    - Same fixed column width for every column (table-layout: fixed)
-    - Shade FIRST column same as header, show icon above product-line text
+    - Fixed column width per column (table-layout: fixed)
+    - Shade first column same as header, show icon above product-line text
     - Shade cells with updates using EMAIL_UPDATE_BG
     - Show 'N/A' if urls.yaml has [] for that competitor+line
-    - Wrap long bullets/URLs within each cell
     """
     if all_events:
         comps = sorted({e["competitor"] for e in all_events})
@@ -838,29 +743,24 @@ def compose_email(all_events):
     for line in LINES_ORDER:
         html.append("<tr>")
 
-        # First column: shaded + icon above text
+        # First column with icon
         cid, _ = line_icon_name(line)
-
         icon_html = (
             f'<img src="cid:{cid}" alt="{line}" width="48" height="48" style="display:block; margin:0 0 4px 0;">'
             if cid else ""
         )
-
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
-            f"{icon_html}{line}"
-            f"</td>"
+            f"{icon_html}{line}</td>"
         )
 
         # Competitor cells
         for c in competitors:
             items = table[line].get(c, [])
-
             cell_style = f"width:{EMAIL_COL_WIDTH}; {wrap_css}"
             if items:
                 cell_style += f" background:{EMAIL_UPDATE_BG};"
-
             if not items:
                 if na_map.get(line, {}).get(c, False):
                     cell_html = "<em>N/A</em>"
@@ -869,7 +769,6 @@ def compose_email(all_events):
             else:
                 bullets = "".join(f"<li style='{li_style}'>{it}</li>" for it in items)
                 cell_html = f"<ul style='{ul_style}'>{bullets}</ul>"
-
             html.append(f"<td style='{cell_style}'>{cell_html}</td>")
 
         html.append("</tr>")
@@ -882,12 +781,12 @@ def compose_email(all_events):
 # Senders (Graph / SMTP)
 # -------------------
 SEND_MODE = os.getenv("SEND_MODE", "GRAPH")  # GRAPH or SMTP
-MAIL_TO   = os.getenv("MAIL_TO", "jaehan.kim@itwfeg.com")
+MAIL_TO = os.getenv("MAIL_TO", "jaehan.kim@itwfeg.com")
 MAIL_FROM = os.getenv("MAIL_FROM", "ww-monitor@itwfeg.com")
 
 # Graph (app creds)
-GRAPH_TENANT        = os.getenv("GRAPH_TENANT_ID", "")
-GRAPH_CLIENT_ID     = os.getenv("GRAPH_CLIENT_ID", "")
+GRAPH_TENANT = os.getenv("GRAPH_TENANT_ID", "")
+GRAPH_CLIENT_ID = os.getenv("GRAPH_CLIENT_ID", "")
 GRAPH_CLIENT_SECRET = os.getenv("GRAPH_CLIENT_SECRET", "")
 
 # SMTP (optional fallback)
@@ -897,9 +796,7 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 
 def _build_inline_attachments_for_lines() -> list[dict]:
-    """
-    Build Microsoft Graph inline fileAttachment objects for any icons that exist in ./assets.
-    """
+    """Build Microsoft Graph inline fileAttachment objects for any icons that exist in ./assets."""
     attachments = []
     for line in LINES_ORDER:
         cid, path = line_icon_name(line)
@@ -909,9 +806,9 @@ def _build_inline_attachments_for_lines() -> list[dict]:
             data = f.read()
         attachments.append({
             "@odata.type": "#microsoft.graph.fileAttachment",
-            "name": cid,                  # attachment filename
-            "contentId": cid,             # must match cid in cid:...
-            "isInline": True,             # inline display
+            "name": cid,        # attachment filename
+            "contentId": cid,   # must match cid in cid:...
+            "isInline": True,   # inline display
             "contentBytes": base64.b64encode(data).decode("utf-8"),
             "contentType": "image/png"
         })
@@ -931,25 +828,23 @@ def send_via_graph(subject, html_body):
     access_token = r.json()["access_token"]
 
     inline_attachments = _build_inline_attachments_for_lines()
-
     send_url = f"https://graph.microsoft.com/v1.0/users/{MAIL_FROM}/sendMail"
     payload = {
         "message": {
             "subject": subject,
             "body": {
                 "contentType": "HTML",
-                "content": f"<html><body>{html_body}</body></html>"  # ← wrap here
+                "content": f"<html><body>{html_body}</body></html>"
             },
             "toRecipients": [{"emailAddress": {"address": addr.strip()}}
                              for addr in MAIL_TO.split(",") if addr.strip()]
         },
         "saveToSentItems": "true"
     }
-
     if inline_attachments:
         payload["message"]["attachments"] = inline_attachments
 
-    h = {"Authorization": f"Bearer {access_token}", "Content-Type":"application/json"}
+    h = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
     dbg("[GRAPH] Sending email…")
     rr = requests.post(send_url, headers=h, json=payload, timeout=25)
     rr.raise_for_status()
@@ -959,11 +854,13 @@ def send_via_smtp(subject, html_body):
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = MAIL_FROM
-    msg["To"]      = MAIL_TO
+    msg["From"] = MAIL_FROM
+    msg["To"] = MAIL_TO
     msg.attach(MIMEText(html_body, "html"))
+
     dbg("[SMTP] Connecting…")
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
         s.starttls()
@@ -981,6 +878,7 @@ def git_commit_and_push(paths: list[str], message: str = "chore: archive updated
     Commit and push the given files to the current branch (uses GITHUB_TOKEN in Actions).
     No-op if 'paths' is empty or running outside GitHub Actions without creds.
     """
+    paths = [p for p in (paths or []) if p]
     if not paths:
         print("[ARCHIVE] No files to commit.")
         return
@@ -1011,7 +909,7 @@ def git_commit_and_push(paths: list[str], message: str = "chore: archive updated
 
 
 # -------------------
-# Preview Test
+# Preview utilities (optional)
 # -------------------
 def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
     """Writes a standalone HTML file for easy preview in SAMPLE mode."""
@@ -1028,6 +926,7 @@ def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
     with open(fname, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"[TEST MODE] Wrote {fname} with rendered email HTML.")
+
 
 def sample_events_for_preview():
     return [
@@ -1050,32 +949,27 @@ def main():
     con = init_db()
     cur = con.cursor()
 
-    use_samples   = os.getenv("SAMPLE_EVENTS") == "1"
+    use_samples = os.getenv("SAMPLE_EVENTS") == "1"
     force_preview = os.getenv("WRITE_PREVIEW") == "1"
 
-    print(f"[DEBUG] BOOTSTRAP_ARCHIVE={os.getenv('BOOTSTRAP_ARCHIVE')} "
+    print(f"[INFO] BOOTSTRAP_ARCHIVE={os.getenv('BOOTSTRAP_ARCHIVE')} "
           f"SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} WRITE_PREVIEW={os.getenv('WRITE_PREVIEW')} "
-          f"ARCHIVE_ALL_PDFS={os.getenv('ARCHIVE_ALL_PDFS')} LOG_LINKS={os.getenv('LOG_LINKS')}")
+          f"ARCHIVE_ALL_PDFS={os.getenv('ARCHIVE_ALL_PDFS')}")
 
     # --- BOOTSTRAP: crawl & archive everything, push, and exit (no email) ---
     if BOOTSTRAP and not use_samples:
         print("[BOOTSTRAP] Starting full archive …")
         all_events = crawl_all(cur)
-
-        # Persist any resource changes made during crawl (resources table)
         con.commit()
 
-        # commit/push archived PDFs
         archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
         num_archived = len([p for p in archived_files if p])
         print(f"[BOOTSTRAP] Discovered {len(all_events)} events; archived files: {num_archived}")
-
         if num_archived:
             git_commit_and_push([p for p in archived_files if p], "bootstrap: initial PDF archive")
             print(f"[BOOTSTRAP] Archived and pushed {num_archived} PDFs.")
         else:
             print("[BOOTSTRAP] No PDFs discovered to archive (check seeds/logs).")
-
         print("[BOOTSTRAP] Done. Exiting without sending email.")
         return
 
@@ -1084,17 +978,18 @@ def main():
         all_events = sample_events_for_preview()
     else:
         all_events = crawl_all(cur)
-        # Persist crawl events
-        for e in all_events:
-            cur.execute("""
-                INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url)
-                VALUES(?,?,?,?,?,?,?,?)
-            """, (
-                datetime.now(timezone.utc).isoformat(),
-                e["competitor"], e["line"], e["url"], e["what"], e["change"],
-                e.get("archived_path"), e.get("archived_url")
-            ))
-        con.commit()
+
+    # Persist crawl events
+    for e in all_events:
+        cur.execute("""
+        INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url)
+        VALUES(?,?,?,?,?,?,?,?)
+        """, (
+            datetime.now(timezone.utc).isoformat(),
+            e["competitor"], e["line"], e["url"], e["what"], e["change"],
+            e.get("archived_path"), e.get("archived_url")
+        ))
+    con.commit()
 
     subject, body = compose_email(all_events)
 
@@ -1107,6 +1002,7 @@ def main():
     if use_samples or force_preview:
         write_preview_file(subject, body, "preview.html")
 
+    # Send
     if SEND_MODE.upper() == "GRAPH":
         # With no credentials or in SAMPLE mode, just print (no send)
         if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
@@ -1114,7 +1010,6 @@ def main():
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
             return
-        # Real send via Graph
         send_via_graph(subject, body)
     else:
         # SMTP fallback
@@ -1123,10 +1018,9 @@ def main():
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
             return
-        # Real send via SMTP
         send_via_smtp(subject, body)
 
-   
+
 # -------------------
 # Entry point
 # -------------------
