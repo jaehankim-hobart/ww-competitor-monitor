@@ -384,11 +384,20 @@ def crawl_seed(cur, competitor, line, url):
 
     # Discover PDFs in raw HTML (scripts/embeds) + anchor href PDFs
     pdf_candidates = set()
+
+    # Absolute URLs: https://...pdf
     for m in re.finditer(r'https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?', html, re.I):
         pdf_candidates.add(urljoin(url, m.group(0)))
+
+    # Relative URLs: /path/file.pdf or ./file.pdf or ../file.pdf
+    for m in re.finditer(r'(?<![A-Za-z0-9])(?:\.{1,2}/|/)[^"\'<> ]+?\.pdf(?:\?[^\s"\'<>]*)?', html, re.I):
+        pdf_candidates.add(urljoin(url, m.group(0)))
+
+    # Merge anchor href PDFs
     for href, _ in links:
         if is_pdf(href):
             pdf_candidates.add(href)
+
 
     print(f"[CRAWL] {competitor} | {line} | {url} -> {len(pdf_candidates)} pdf-candidates")
     if pdf_candidates:
