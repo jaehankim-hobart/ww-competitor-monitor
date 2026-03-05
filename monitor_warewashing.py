@@ -358,6 +358,45 @@ def crawl_seed(cur, competitor, line, url):
         for i, (lhref, ltext) in enumerate(links[:30]):
             print(f"   [LINK {i+1:02d}] {lhref}  |  {ltext[:120]}")
 
+
+    # --- Add embedded product URLs that are not in <a href> ---
+    # Many sites use JS-driven tiles/cards with onclick handlers or data attributes instead of <a>.
+    # We detect typical patterns and append them to `links` so the normal pipeline can process them.
+
+    embedded_links = set()
+
+    # Pattern 1: onclick="location.href='/path/to/product/'" or onclick="window.location='/path...'"
+    for m in re.finditer(r'onclick\s*=\s*"(?:location\.href|window\.location)\s*=\s*[\'"]([^\'"]+)[\'"]', html, re.I):
+        embedded_links.add(urljoin(url, m.group(1)))
+    for m in re.finditer(r"onclick\s*=\s*'(?:location\.href|window\.location)\s*=\s*[\"']([^\"']+)[\"']", html, re.I):
+        embedded_links.add(urljoin(url, m.group(1)))
+
+    # Pattern 2: data-url="/path/to/product/"
+    for m in re.finditer(r'data-url\s*=\s*"(.*?)"', html, re.I):
+        embedded_links.add(urljoin(url, m.group(1)))
+    for m in re.finditer(r"data-url\s*=\s*'(.*?)'", html, re.I):
+        embedded_links.add(urljoin(url, m.group(1)))
+
+    # Pattern 3: JS helpers like goToProduct('/path/...') or openProduct("...") etc.
+    for m in re.finditer(r'goToProduct\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', html, re.I):
+        embedded_links.add(urljoin(url, m.group(1)))
+    for m in re.finditer(r'openProduct\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', html, re.I):
+        embedded_links.add(urljoin(url, m.group(1)))
+
+    # Pattern 4: Generic 'href' inside JS/JSON blobs (last resort; avoid being too greedy)
+    # e.g., {"url":"/our-products/undercounter-dishwashers/model-abc/"}
+    for m in re.finditer(r'["\']url["\']\s*:\s*["\'](/[^"\']+/products?[^"\']*)["\']', html, re.I):
+        embedded_links.add(urljoin(url, m.group(1)))
+    for m in re.finditer(r'["\']href["\']\s*:\s*["\'](/[^"\']+/products?[^"\']*)["\']', html, re.I):
+        embedded_links.add(urljoin(url, m.group(1)))
+
+    # Append embedded links into the normal `links` list so downstream logic handles them the same way
+    if embedded_links:
+        print(f"[CRAWL] {competitor} | {line} | {url} -> +{len(embedded_links)} embedded product links")
+        for eurl in sorted(embedded_links):
+            links.append((eurl, ""))  # empty text is fine; we classify by URL pattern later
+
+    
     # Record the seed page itself (as a product/category page)
     change, _ = record_resource(
         cur,
@@ -468,6 +507,7 @@ def crawl_seed(cur, competitor, line, url):
                 "archived_path": archived_path
             })
 
+
     # 2) Crawl product pages (same-host only) one hop
     for href, text in links:
         if href in seen:
@@ -479,7 +519,11 @@ def crawl_seed(cur, competitor, line, url):
             if not ph:
                 print(f"[CRAWL] NO HTML (subpage) for {href}")
                 continue
-            ptitle, _ = extract_links(ph, href)
+
+            # Extract links from the subpage
+            ptitle, sub_links = extract_links(ph, href)
+
+            # Record the subpage itself as an HTML resource
             content_hash = sha256_bytes(strip_main_text(ph).encode("utf-8"))
             change, _ = record_resource(cur, href, competitor, line, "html", ph_headers, content_hash, ptitle)
             if change in ("added","updated"):
@@ -488,6 +532,88 @@ def crawl_seed(cur, competitor, line, url):
                     "what": "Product page", "change": change,
                     "old_url": None, "archived_path": None, "archived_url": None
                 })
+
+            # --- Discover PDFs on the subpage (absolute and relative), plus anchor href PDFs ---
+            sub_pdf_candidates = set()
+
+            # Absolute URLs: https://...pdf
+            for m in re.finditer(r'https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?', ph, re.I):
+                sub_pdf_candidates.add(urljoin(href, m.group(0)))
+
+            # Relative URLs: /path/file.pdf or ./file.pdf or ../file.pdf
+            for m in re.finditer(r'(?<![A-Za-z0-9])(?:\.{1,2}/|/)[^"\'<> ]+?\.pdf(?:\?[^\s"\'<>]*)?', ph, re.I):
+                sub_pdf_candidates.add(urljoin(href, m.group(0)))
+
+            # Anchor href PDFs found by BeautifulSoup on the subpage
+            for sub_href, _ in sub_links:
+                if is_pdf(sub_href):
+                    sub_pdf_candidates.add(sub_href)
+
+            if sub_pdf_candidates:
+                print(f"[CRAWL:SUB] PDFs on {href} -> {len(sub_pdf_candidates)} candidates")
+                for i, cand in enumerate(sorted(list(sub_pdf_candidates))[:20]):
+                    print(f"   [SUB PDF CAND {i+1:02d}] {cand}")
+
+            # Process subpage PDF candidates (allow ARCHIVE_ALL_PDFS override)
+            archive_all = os.getenv("ARCHIVE_ALL_PDFS", "0") == "1"
+            for pdf_url in sorted(sub_pdf_candidates):
+                if pdf_url in seen:
+                    continue
+                seen.add(pdf_url)
+
+                # anchor text on subpage usually not needed; keep empty
+                sub_text = ""
+
+                # Accept if override or pattern-match
+                if not archive_all:
+                    if not (PDF_PATTERNS.search(pdf_url) or PDF_PATTERNS.search(sub_text)):
+                        continue
+
+                # HEAD -> fallback GET for hash/headers
+                h2 = head(pdf_url)
+                dl_hash2, dl_headers2 = (None, h2)
+                if h2 is None or not (h2.get("ETag") or h2.get("Last-Modified")):
+                    dl_hash2, dl_headers2 = get_pdf_hash(pdf_url)
+
+                # Classify (fallback to Brochure under override)
+                doc_kind2 = classify_pdf(pdf_url + " " + sub_text)
+                if not doc_kind2:
+                    doc_kind2 = "Brochure" if archive_all else None
+                if not doc_kind2:
+                    continue
+
+                ch2, prev_row2 = record_resource(cur, pdf_url, competitor, line, "pdf", dl_headers2, dl_hash2, sub_text)
+                if ch2 in ("added", "updated"):
+                    # Download & archive
+                    pdf_resp2 = safe_request("GET", pdf_url)
+                    pdf_bytes2 = pdf_resp2.content if pdf_resp2 else None
+                    if pdf_bytes2 is None:
+                        # Retry once for transient issues
+                        pdf_resp2 = safe_request("GET", pdf_url)
+                        pdf_bytes2 = pdf_resp2.content if pdf_resp2 else None
+
+                    disp_name2 = beautify_filename(pdf_url or "document.pdf")
+                    sha_now2 = sha256_bytes(pdf_bytes2) if pdf_bytes2 else (dl_hash2 or "nohash")
+
+                    archived_path2 = None
+                    archived_url2  = None
+                    if pdf_bytes2:
+                        archived_path2 = archive_pdf(competitor, line, pdf_url, pdf_bytes2, disp_name2, sha_now2)
+                        if GITHUB_REPOSITORY:
+                            archived_url2 = build_github_raw_url(GITHUB_REPOSITORY, GITHUB_REF_NAME, archived_path2)
+
+                    print(f"[ARCHIVE:SUB] {competitor} | {line} | {disp_name2} -> {archived_path2 or 'NO BYTES'}")
+
+                    results.append({
+                        "competitor": competitor,
+                        "line": line,
+                        "url": pdf_url,
+                        "what": doc_kind2,
+                        "change": ch2,
+                        "old_url": prev_row2["url"] if (prev_row2 and ch2 == "updated") else None,
+                        "archived_url": archived_url2,
+                        "archived_path": archived_path2
+                    })
 
     return results
 
