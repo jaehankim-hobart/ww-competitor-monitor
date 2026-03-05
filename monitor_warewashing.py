@@ -1,12 +1,15 @@
+
 # monitor_warewashing.py (DEBUG VERSION)
 # ---------------------------------------------------------------------------
-# This debug version includes:
-#   - LOG_LINKS=1 to print extracted <a> links from HTML
-#   - ARCHIVE_ALL_PDFS=1 to archive EVERY .pdf found (ignores classification)
-#   - Extra debug printouts in crawl logic
-#   - Cross-host PDF discovery
-#   - Raw HTML PDF extraction
-#   - Safer GET fallback for PDF downloads
+# Debug version includes:
+# - LOG_LINKS=1 to print extracted <a> links from HTML
+# - ARCHIVE_ALL_PDFS=1 to archive EVERY .pdf found (ignores classification)
+# - Extra debug printouts in crawl logic
+# - Cross-host PDF discovery (CDNs/subdomains allowed for PDFs)
+# - Raw HTML PDF extraction (absolute + relative) on seeds and subpages
+# - Safer GET fallback for PDF downloads
+# - Embedded product link extraction (onclick/data-url/JS helpers)
+# - Optional UA override via UA_OVERRIDE
 # ---------------------------------------------------------------------------
 
 import os
@@ -19,8 +22,10 @@ import time
 import base64
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse, unquote
+
 import requests
 from bs4 import BeautifulSoup
+
 
 # -------------------
 # Debug helper
@@ -30,6 +35,7 @@ def dbg(msg: str):
     if os.getenv("DEBUG_LOG", "1") == "1":
         print(msg)
 
+
 # -------------------
 # Config loading (YAML)
 # -------------------
@@ -37,6 +43,7 @@ def load_yaml(path):
     import yaml
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
 
 BASE_DIR = os.path.dirname(__file__)
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
@@ -50,7 +57,6 @@ DEFAULT_COMPETITORS = [
     "Champion", "Jackson", "Meiko", "CMA", "Noble",
     "ADS", "Moyer Diebel", "Douglas", "LVO"
 ]
-
 DEFAULT_LINES = [
     "Door Type", "Undercounter", "Prep Washer",
     "Rack Conveyor", "Flight Type"
@@ -62,6 +68,7 @@ LINES_ORDER     = COMP_CONF.get("lines", DEFAULT_LINES)
 DOOR, UNDER, PREP, RACK, FLIGHT = (
     "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
 )
+
 
 # -------------------
 # Styling defaults
@@ -77,6 +84,7 @@ EMAIL_CELL_PAD    = EMAIL_STYLE.get("cell_padding", "6")
 EMAIL_COL_WIDTH   = EMAIL_STYLE.get("column_width", "180px")
 EMAIL_UPDATE_BG   = EMAIL_STYLE.get("update_bg", "#FFFFE0")
 
+
 # -------------------
 # Archiving configuration
 # -------------------
@@ -84,6 +92,7 @@ ARCHIVE_DIR        = os.getenv("ARCHIVE_DIR", "archive")
 GITHUB_REPOSITORY  = os.getenv("GITHUB_REPOSITORY", "")
 GITHUB_REF_NAME    = os.getenv("GITHUB_REF_NAME", "main")
 BOOTSTRAP          = os.getenv("BOOTSTRAP_ARCHIVE") == "1"
+
 
 # -------------------
 # Build N/A matrix from urls.yaml
@@ -98,11 +107,15 @@ def build_na_map():
                 na[line][comp] = True
     return na
 
+
 # -------------------
 # HTML link helper
 # -------------------
 def a(href: str, label: str) -> str:
+    href = href or "#"
+    label = label or (href if href != "#" else "link")
     return f'<a href="{href}">{label}</a>'
+
 
 # -------------------
 # Display helpers
@@ -121,6 +134,7 @@ def display_url_label(href: str, max_len: int = 60) -> str:
         return label or href
     except Exception:
         return href
+
 
 ACRONYM_KEEP = {"PRO","VHR","ER","HT","LT","HR","ADA","NSF","UL"}
 
@@ -144,6 +158,7 @@ def beautify_filename(url_or_name: str) -> str:
     name = " ".join(words)
     return name
 
+
 # -------------------
 # PDF patterns (debug: broader)
 # -------------------
@@ -159,11 +174,12 @@ def classify_pdf(text_or_url: str):
     s = text_or_url or ""
     if re.search(r"spec(?:ification)?[\s\-]?sheet|specsheet|cut[\s\-]?sheet|cutsheet", s, re.I):
         return "Spec Sheet"
-    if re.search(r"data[\s\-]?sheet|datasheet|product[\s\-]?data|technical[\s\-]?data", s, re.I):
+    if re.search(r"data[\s\-]?sheet|datasheet|product[\s\-]?data|technical[\s\-]?data|tech[\s\-]?data", s, re.I):
         return "Data Sheet"
     if re.search(r"brochure|sell[\s\-]?sheet|sales[\s\-]?sheet|flyer|product[\s\-]?sheet", s, re.I):
         return "Brochure"
     return None
+
 
 # -------------------
 # DB helpers
@@ -248,6 +264,7 @@ def record_resource(cur, url, competitor, line, kind, headers, content_hash, tit
     cur.execute("UPDATE resources SET last_seen=? WHERE url=?", (now, url))
     return None, prev
 
+
 # -------------------
 # HTTP helpers
 # -------------------
@@ -255,7 +272,7 @@ REQUEST_TIMEOUT = 25
 DEFAULT_UA = "WW-Competitor-Monitor/1.0 (+market intel; contact: ww-monitor@itwfeg.com)"
 
 session = requests.Session()
-session.headers.update({"User-Agent": DEFAULT_UA})
+session.headers.update({"User-Agent": os.getenv("UA_OVERRIDE", DEFAULT_UA)})
 
 def safe_request(method, url):
     try:
@@ -303,6 +320,7 @@ def strip_main_text(html):
     txt = soup.get_text(" ", strip=True)
     return " ".join(txt.split())[:20000]
 
+
 # -------------------
 # Archiving helpers
 # -------------------
@@ -334,6 +352,7 @@ def build_github_raw_url(repo: str, branch: str, local_path: str) -> str:
     local_path = local_path.replace("\\", "/")
     return f"https://raw.githubusercontent.com/{repo}/{branch}/{local_path}"
 
+
 # -------------------
 # Crawl logic (DEBUG)
 # -------------------
@@ -358,55 +377,34 @@ def crawl_seed(cur, competitor, line, url):
         for i, (lhref, ltext) in enumerate(links[:30]):
             print(f"   [LINK {i+1:02d}] {lhref}  |  {ltext[:120]}")
 
-
     # --- Add embedded product URLs that are not in <a href> ---
-    # Many sites use JS-driven tiles/cards with onclick handlers or data attributes instead of <a>.
-    # We detect typical patterns and append them to `links` so the normal pipeline can process them.
-
     embedded_links = set()
 
-    # Pattern 1: onclick="location.href='/path/to/product/'" or onclick="window.location='/path...'"
+    # onclick="location.href='...'" or onclick="window.location='...'"
     for m in re.finditer(r'onclick\s*=\s*"(?:location\.href|window\.location)\s*=\s*[\'"]([^\'"]+)[\'"]', html, re.I):
         embedded_links.add(urljoin(url, m.group(1)))
     for m in re.finditer(r"onclick\s*=\s*'(?:location\.href|window\.location)\s*=\s*[\"']([^\"']+)[\"']", html, re.I):
         embedded_links.add(urljoin(url, m.group(1)))
 
-    # Pattern 2: data-url="/path/to/product/"
-    for m in re.finditer(r'data-url\s*=\s*"(.*?)"', html, re.I):
+    # data-url="/path/to/product/"
+    for m in re.finditer(r'data-url\s*=\s*"([^"]+)"', html, re.I):
         embedded_links.add(urljoin(url, m.group(1)))
-    for m in re.finditer(r"data-url\s*=\s*'(.*?)'", html, re.I):
-        embedded_links.add(urljoin(url, m.group(1)))
-
-    # Pattern 3: JS helpers like goToProduct('/path/...') or openProduct("...") etc.
-    for m in re.finditer(r'goToProduct\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', html, re.I):
-        embedded_links.add(urljoin(url, m.group(1)))
-    for m in re.finditer(r'openProduct\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', html, re.I):
+    for m in re.finditer(r"data-url\s*=\s*'([^']+)'", html, re.I):
         embedded_links.add(urljoin(url, m.group(1)))
 
-    # Pattern 4: Generic 'href' inside JS/JSON blobs (last resort; avoid being too greedy)
-    # e.g., {"url":"/our-products/undercounter-dishwashers/model-abc/"}
-    for m in re.finditer(r'["\']url["\']\s*:\s*["\'](/[^"\']+/products?[^"\']*)["\']', html, re.I):
-        embedded_links.add(urljoin(url, m.group(1)))
-    for m in re.finditer(r'["\']href["\']\s*:\s*["\'](/[^"\']+/products?[^"\']*)["\']', html, re.I):
+    # JS helpers like goToProduct('/path/...') or openProduct("...")
+    for m in re.finditer(r'(?:goToProduct|openProduct)\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', html, re.I):
         embedded_links.add(urljoin(url, m.group(1)))
 
-    # Append embedded links into the normal `links` list so downstream logic handles them the same way
     if embedded_links:
         print(f"[CRAWL] {competitor} | {line} | {url} -> +{len(embedded_links)} embedded product links")
         for eurl in sorted(embedded_links):
-            links.append((eurl, ""))  # empty text is fine; we classify by URL pattern later
+            links.append((eurl, ""))  # treat same as normal anchors
 
-    
     # Record the seed page itself (as a product/category page)
     change, _ = record_resource(
-        cur,
-        url,
-        competitor,
-        line,
-        "html",
-        headers,
-        sha256_bytes(strip_main_text(html).encode("utf-8")),
-        title
+        cur, url, competitor, line, "html",
+        headers, sha256_bytes(strip_main_text(html).encode("utf-8")), title
     )
     if change in ("added", "updated"):
         results.append({
@@ -421,22 +419,18 @@ def crawl_seed(cur, competitor, line, url):
         if href not in link_text_map:
             link_text_map[href] = text or ""
 
-    # Discover PDFs in raw HTML (scripts/embeds) + anchor href PDFs
+    # Discover PDFs in seed HTML (absolute + relative) + anchor href PDFs
     pdf_candidates = set()
-
     # Absolute URLs: https://...pdf
     for m in re.finditer(r'https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?', html, re.I):
         pdf_candidates.add(urljoin(url, m.group(0)))
-
-    # Relative URLs: /path/file.pdf or ./file.pdf or ../file.pdf
-    for m in re.finditer(r'(?<![A-Za-z0-9])(?:\.{1,2}/|/)[^"\'<> ]+?\.pdf(?:\?[^\s"\'<>]*)?', html, re.I):
+    # Relative URLs: /file.pdf or ./file.pdf or ../file.pdf
+    for m in re.finditer(r'(?:(?:\./|\../|/)[^"\'<>\s]+\.pdf(?:\?[^\s"\'<>]*)?)', html, re.I):
         pdf_candidates.add(urljoin(url, m.group(0)))
-
     # Merge anchor href PDFs
     for href, _ in links:
         if is_pdf(href):
             pdf_candidates.add(href)
-
 
     print(f"[CRAWL] {competitor} | {line} | {url} -> {len(pdf_candidates)} pdf-candidates")
     if pdf_candidates:
@@ -485,7 +479,7 @@ def crawl_seed(cur, competitor, line, url):
                 pdf_bytes = pdf_resp.content if pdf_resp else None
 
             disp_name = beautify_filename(href or text or "document.pdf")
-            sha_now = sha256_bytes(pdf_bytes) if pdf_bytes else (dl_hash or "nohash")
+            sha_now   = sha256_bytes(pdf_bytes) if pdf_bytes else (dl_hash or "nohash")
 
             archived_path = None
             archived_url  = None
@@ -506,7 +500,6 @@ def crawl_seed(cur, competitor, line, url):
                 "archived_url": archived_url,
                 "archived_path": archived_path
             })
-
 
     # 2) Crawl product pages (same-host only) one hop
     for href, text in links:
@@ -533,18 +526,18 @@ def crawl_seed(cur, competitor, line, url):
                     "old_url": None, "archived_path": None, "archived_url": None
                 })
 
-            # --- Discover PDFs on the subpage (absolute and relative), plus anchor href PDFs ---
+            # --- Discover PDFs on the subpage (absolute + relative) + anchor href PDFs ---
             sub_pdf_candidates = set()
 
-            # Absolute URLs: https://...pdf
+            # Absolute URLs on subpage
             for m in re.finditer(r'https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?', ph, re.I):
                 sub_pdf_candidates.add(urljoin(href, m.group(0)))
 
-            # Relative URLs: /path/file.pdf or ./file.pdf or ../file.pdf
-            for m in re.finditer(r'(?<![A-Za-z0-9])(?:\.{1,2}/|/)[^"\'<> ]+?\.pdf(?:\?[^\s"\'<>]*)?', ph, re.I):
+            # Relative URLs on subpage
+            for m in re.finditer(r'(?:(?:\./|\../|/)[^"\'<>\s]+\.pdf(?:\?[^\s"\'<>]*)?)', ph, re.I):
                 sub_pdf_candidates.add(urljoin(href, m.group(0)))
 
-            # Anchor href PDFs found by BeautifulSoup on the subpage
+            # Anchor href PDFs on subpage
             for sub_href, _ in sub_links:
                 if is_pdf(sub_href):
                     sub_pdf_candidates.add(sub_href)
@@ -555,14 +548,12 @@ def crawl_seed(cur, competitor, line, url):
                     print(f"   [SUB PDF CAND {i+1:02d}] {cand}")
 
             # Process subpage PDF candidates (allow ARCHIVE_ALL_PDFS override)
-            archive_all = os.getenv("ARCHIVE_ALL_PDFS", "0") == "1"
             for pdf_url in sorted(sub_pdf_candidates):
                 if pdf_url in seen:
                     continue
                 seen.add(pdf_url)
 
-                # anchor text on subpage usually not needed; keep empty
-                sub_text = ""
+                sub_text = ""  # anchor text on subpage typically not needed
 
                 # Accept if override or pattern-match
                 if not archive_all:
@@ -617,6 +608,7 @@ def crawl_seed(cur, competitor, line, url):
 
     return results
 
+
 def crawl_all(cur):
     events = []
     # Print seed summary for visibility
@@ -630,8 +622,9 @@ def crawl_all(cur):
                 events.extend(evs)
                 # Politeness delay
                 time.sleep(0.3)
-    print(f"[SEEDS] Crawl finished with {len(events)} events")
+    print(f"[SEEDS] Crawl finished with {len(events)} events}")
     return events
+
 
 # -------------------
 # Pivot for email table
@@ -664,6 +657,7 @@ def pivot_for_table(all_events):
             table[line][c].append(label)
     return competitors, table, na_map
 
+
 # -------------------
 # Icons for product lines
 # -------------------
@@ -676,6 +670,7 @@ def line_icon_name(line: str):
         "Flight Type":    ("flighttype.png",   os.path.join("assets", "flighttype.png")),
     }
     return m.get(line, ("", ""))
+
 
 # -------------------
 # Email builder (HTML)
@@ -730,7 +725,10 @@ def compose_email(all_events):
 
         # First column: shaded + icon above text
         cid, _ = line_icon_name(line)
-        icon_html = f'<img src="cid:{cid}" alt="{line}" width="48" height="48" style="display:block; margin:0 0 4px 0;">' if cid else ""
+        icon_html = (
+            f'<img src="cid:{cid}" alt="{line}" width="48" height="48" style="display:block; margin:0 0 4px 0;">'
+            if cid else ""
+        )
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
@@ -761,6 +759,7 @@ def compose_email(all_events):
 
     html.append("</tbody></table></div>")
     return subject, "\n".join(html)
+
 
 # -------------------
 # Senders (Graph / SMTP)
@@ -851,6 +850,7 @@ def send_via_smtp(subject, html_body):
         s.sendmail(MAIL_FROM, [a.strip() for a in MAIL_TO.split(",") if a.strip()], msg.as_string())
     dbg("[SMTP] Email sent.")
 
+
 # -------------------
 # Git commit & push for archives
 # -------------------
@@ -887,6 +887,7 @@ def git_commit_and_push(paths: list[str], message: str = "chore: archive updated
     else:
         print("[ARCHIVE] Pushed archive commit.")
 
+
 # -------------------
 # Preview Test
 # -------------------
@@ -918,6 +919,7 @@ def sample_events_for_preview():
         {"competitor":"Moyer Diebel","line":"Undercounter","url":"https://moyerdiebel.com/content/specs/383HT_Spec_Sheet.pdf","what":"Spec Sheet","change":"added","old_url":None,"archived_url":None,"archived_path":None},
         {"competitor":"Jackson","line":"Flight Type","url":"https://www.jacksonwws.com/products/flightstar/","what":"Product page","change":"updated","old_url":None,"archived_url":None,"archived_path":None},
     ]
+
 
 # -------------------
 # Main
@@ -988,10 +990,7 @@ def main():
         if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
             print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
             print("=== SUBJECT ==="); print(subject)
-            print("=== HTML BODY ==="); print(body)
-            return
-        # Real send via Graph
-        send_via_graph(subject, body)
+            body)
     else:
         # SMTP fallback
         if use_samples:
@@ -1001,6 +1000,7 @@ def main():
             return
         # Real send via SMTP
         send_via_smtp(subject, body)
+
 
 # -------------------
 # Entry point
