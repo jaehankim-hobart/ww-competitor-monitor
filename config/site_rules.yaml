@@ -1,0 +1,44 @@
+
+# config/site_rules.yaml
+Champion:
+  host_allow:
+    - "^www\\.championindustries\\.com$"
+  # Out-of-scope paths (even if they contain dish/door words)
+  path_block:
+    - "^/(?:blog|news|events|press|privacy|terms|warranty|service|support|contact|search|sitemap)(/|$)"
+    - "^/wp-content/"
+    - "\\.(?:jpg|jpeg|png|gif|svg|webp)(?:\\?.*)?$"
+  # Page allow rules (HTML pages we will follow one hop from seeds)
+  page_allow:
+    # Known category landing pages
+    - "^/our-products/(?:door-type|undercounter-dishwashers|pot-pan|rack-conveyors|flight-machines)/?$"
+    # Flat product pages: one segment with a model/name slug
+    - "^/[A-Za-z0-9][A-Za-z0-9-]{4,}$"
+  # PDF host/domain allowlist for Champion (keep it tight)
+  pdf_host_allow:
+    - "^www\\.championindustries\\.com$"
+  # Map URLs (or text) to product lines. Add more patterns from your nomenclature.
+  line_patterns:
+    Door Type:
+      - "(?i)door[- ]type[- ]dishwash"
+      - "(?i)\\bDH\\d{3,4}\\b"          # example: DH3000
+      - "(?i)upright[- ]door"
+    Undercounter:
+      - "(?i)undercounter"
+      - "(?i)\\bUD\\d{2,4}\\b"
+    Prep Washer:
+      - "(?i)pot[- ]pan"                # Champion calls it Pot & Pan
+      - "(?i)utensil[- ]washer"
+    Rack Conveyor:
+      - "(?i)rack[- ]conveyor"
+      - "(?i)\\b44[- ]PRO\\b|\\b64\\b|\\bVHR\\b"
+    Flight Type:
+      - "(?i)flight[- ]machines?|flight[- ]type"
+  # Optional: map Champion's public PDF folder structure to product line
+  pdf_path_line_hints:
+    Door Type: "(?i)/content/(?:spec-)?sheets?/Door[- ]Type/"
+    Undercounter: "(?i)/content/(?:spec-)?sheets?/Undercounter/"
+    Prep Washer: "(?i)/content/(?:spec-)?sheets?/(?:Pot[- ]Pan|Prep)/"
+    Rack Conveyor: "(?i)/content/(?:spec-)?sheets?/Rack[- ]Conveyors?/"
+    Flight Type: "(?i)/content/(?:spec-)?sheets?/Flight[- ]Machines?/"
+``
