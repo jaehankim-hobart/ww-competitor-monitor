@@ -1,6 +1,9 @@
 
-# config/site_rules.yaml
 Champion:
+  # Archive every PDF from Champion while we stabilize discovery/classification.
+  # Turn this off later if you want only spec/brochure/datasheet types.
+  pdf_accept_all: true
+
   host_allow:
     - "^www\\.championindustries\\.com$"
 
@@ -12,17 +15,18 @@ Champion:
 
   # What HTML pages are OK to follow from the seeds (same host only)
   page_allow:
-    # Category landers (your current seeds already point here)
+    # Category landers (your seeds already point here)
     - "^/our-products/(?:door-type|undercounter-dishwashers|pot-pan|rack-conveyors|flight-machines)/?$"
-    # Flat product detail pages: single slug after root like /DH3000-Door-Type-Dishwashing-Machine
-    - "^/[A-Za-z0-9][A-Za-z0-9-]{4,}$"
+    # Flat product detail pages: single slug after root
+    - "^/[A-Za-z0-9][A-Za-z0-9-]{4,}/?$"
+    # Also allow 2–3 segment paths (some sites use nested slugs)
+    - "^/[A-Za-z0-9][A-Za-z0-9-]{2,}(?:/[A-Za-z0-9-]{2,}){1,2}/?$"
 
-  # Restrict Champion PDFs to first-party domain (extend if they use CDN)
+  # Restrict Champion PDFs to first-party domain (extend if they use a CDN)
   pdf_host_allow:
     - "^www\\.championindustries\\.com$"
 
-  # === Product-line mapping rules (from your message) ===
-  # We’ll match against URL (and anchor/page text as fallback).
+  # Deterministic line classification from your URL substrings
   line_patterns:
     Door Type:
       - "(?i)Door-Type-Dishwashing-Machine"
@@ -35,5 +39,5 @@ Champion:
     Flight Type:
       - "(?i)flight-conveyor-series/"
 
-  # Optional bonus: if their public PDF folders encode line hints, add here later.
+  # Optional: add folder hints later if Champion's PDFs use distinct directories
   pdf_path_line_hints: {}
