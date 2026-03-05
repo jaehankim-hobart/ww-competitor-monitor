@@ -192,6 +192,7 @@ def a(href: str, label: str) -> str:
     return f'<a href="{href}">{label}</a>'
 
 
+
 # -------------------
 # Display helpers
 # -------------------
@@ -840,10 +841,12 @@ def compose_email(all_events):
 
         # First column: shaded + icon above text
         cid, _ = line_icon_name(line)
+
         icon_html = (
             f'<img src="cid:{cid}" alt="{line}" width="48" height="48" style="display:block; margin:0 0 4px 0;">'
             if cid else ""
         )
+
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
@@ -934,11 +937,16 @@ def send_via_graph(subject, html_body):
     payload = {
         "message": {
             "subject": subject,
-            "body": {"contentType": "HTML", "content": html_body},
-            "toRecipients": [{"emailAddress": {"address": addr.strip()}} for addr in MAIL_TO.split(",") if addr.strip()]
+            "body": {
+                "contentType": "HTML",
+                "content": f"<html><body>{html_body}</body></html>"  # ← wrap here
+            },
+            "toRecipients": [{"emailAddress": {"address": addr.strip()}}
+                             for addr in MAIL_TO.split(",") if addr.strip()]
         },
         "saveToSentItems": "true"
     }
+
     if inline_attachments:
         payload["message"]["attachments"] = inline_attachments
 
