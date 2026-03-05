@@ -70,7 +70,7 @@ jobs:
           BOOTSTRAP_ARCHIVE: "1"
           SEND_MODE: GRAPH
           WRITE_PREVIEW: "0"
-          # Debug toggles from inputs
+          # Debug toggles from inputs (FIXED: '&&' not '&amp;&amp;')
           ARCHIVE_ALL_PDFS: ${{ inputs.archive_all_pdfs && '1' || '0' }}
           LOG_LINKS:        ${{ inputs.log_links && '1' || '0' }}
           DEBUG_LOG:        ${{ inputs.debug_mode && '1' || '0' }}
