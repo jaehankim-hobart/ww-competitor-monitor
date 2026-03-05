@@ -6,29 +6,30 @@ Champion:
   Prep Washer:
     - https://www.championindustries.com/our-products/pot-pan/
   Rack Conveyor:
-    - https://www.championindustries.com/our-products/rack-conveyor/
+    - https://www.championindustries.com/our-products/rack-conveyors/
   Flight Type:
-    - https://www.championindustries.com/our-products/flight/
+    - https://www.championindustries.com/our-products/flight-machines/
 
 Jackson:
   Door Type:
-    - https://www.jacksonwws.com/categories/door-type/
+    - https://www.jacksonwws.com/categories/high-temp-door-types/
+    - https://www.jacksonwws.com/categories/low-temp-door-types/
   Undercounter:
-    - https://www.jacksonwws.com/categories/undercounter/    # falls under product lines
+    - https://www.jacksonwws.com/categories/undercounters/
   Prep Washer:
-    - https://www.jacksonwws.com/categories/door-type/        # Jackson does not have pot/pan washers — closest category is door-type pages
+    []  # N/A
   Rack Conveyor:
     - https://www.jacksonwws.com/categories/conveyors-good-better-best/
   Flight Type:
-    - https://www.jacksonwws.com/categories/flight/
+    - https://www.jacksonwws.com/products/flightstar/
 
 Meiko:
   Door Type:
-    - https://www.meiko.com/en-us/products/commercial-dishwashers/hood-type-dishwashers
+    - https://www.meiko.com/en-us/products/commercial-dishwashers/door-type-dishwashers
   Undercounter:
     - https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers
   Prep Washer:
-    - https://www.meiko.com/en-us/products/commercial-dishwashers/utensil-washers
+    - https://www.meiko.com/en-us/products/commercial-dishwashers/pot-and-pan-washers
   Rack Conveyor:
     - https://www.meiko.com/en-us/products/commercial-dishwashers/rack-conveyor-dishwashers
   Flight Type:
@@ -46,19 +47,19 @@ CMA:
   Rack Conveyor:
     - https://cmadishmachines.com/cma-product-category/conveyor-dishwashers/
   Flight Type:
-    []   # CMA has no flight machines
+    []  # N/A
 
 Noble:
   Door Type:
-    - https://www.webstaurantstore.com/vendor/noble-warewashing.html
+    - https://www.webstaurantstore.com/4317/single-rack-dishwashers-and-double-rack-dishwashers.html?vendor=Noble-Warewashing
   Undercounter:
     - https://www.webstaurantstore.com/4321/under-counter-dishwashers.html?vendor=Noble-Warewashing
   Prep Washer:
-    - https://www.webstaurantstore.com/vendor/noble-warewashing.html
+    - https://www.webstaurantstore.com/4321/under-counter-dishwashers.html?vendor=Noble-Warewashing
   Rack Conveyor:
-    - https://www.webstaurantstore.com/vendor/noble-warewashing.html
+    - https://www.webstaurantstore.com/4313/conveyor-dishwashers.html?vendor=Noble-Warewashing
   Flight Type:
-    []  # Noble has no flight machines
+    []  # N/A
 
 ADS:
   Door Type:
@@ -66,45 +67,44 @@ ADS:
   Undercounter:
     - https://www.americandish.com/dish-machines/
   Prep Washer:
-    - https://www.americandish.com/dish-machines/     # Covers pot/pan/utility machines
+    - https://www.americandish.com/dish-machines/    
   Rack Conveyor:
     - https://www.americandish.com/dish-machines/
   Flight Type:
-    []   # ADS does not build flight machines
+    []  # N/A
 
 Moyer Diebel:
   Door Type:
-    - https://www.moyerdiebel.com/product-catalog/
+    - https://www.moyerdiebel.com/door-type/
   Undercounter:
     - https://www.moyerdiebel.com/undercounter-dishwashers/
   Prep Washer:
-    - https://www.moyerdiebel.com/product-catalog/
+    []  # Moyer Diebel has no prep washer
   Rack Conveyor:
-    - https://www.moyerdiebel.com/product-catalog/
+    - https://www.moyerdiebel.com/rack-conveyors/
   Flight Type:
     []  # Moyer Diebel has no flight line
 
 Douglas:
   Door Type:
-    []   # Douglas does not build door-type dishmachines
+    []   # Not applicable
   Undercounter:
-    []   # Not applicable — they build industrial washers
+    []   # Not applicable
   Prep Washer:
-    - https://www.dougmac.com/industrial-washers/pan-washers/
-    - https://www.dougmac.com/industrial-washers/roll-in-rack-washers/
+    - https://www.dougmac.com/industrial-washers/commercial-pot-pan-and-utensil-washers/
   Rack Conveyor:
-    - https://www.dougmac.com/industrial-washers/conveyorized-tunnel-washers/
+    []   # Not applicable
   Flight Type:
     []   # Not applicable
 
 LVO:
   Door Type:
-    []  # N/A — LVO is not a commercial dishwasher manufacturer
+    []  # N/A
   Undercounter:
     []  # N/A
   Prep Washer:
-    - https://www.lvomfg.com/site/product-category/washers/pan-washers/
+    - https://www.lvomfg.com/site/product-category/washers/pan-washers/panwasherstyle/panwasherfrontload/
   Rack Conveyor:
-    - https://www.lvomfg.com/site/product-category/washers/rack-washers/
+    []  # N/A
   Flight Type:
     []  # N/A
