@@ -36,6 +36,81 @@ def dbg(msg: str):
         print(msg)
 
 
+# --- add near other config loads (top of file) ---
+RULES_PATH = os.path.join(CONFIG_DIR, "site_rules.yaml")
+try:
+    SITE_RULES = load_yaml(RULES_PATH)
+except Exception:
+    SITE_RULES = {}
+
+def _compile_patterns(patts):
+    if not patts:
+        return []
+    if isinstance(patts, (list, tuple)):
+        return [re.compile(p) for p in patts]
+    return [re.compile(patts)]
+
+def _get_rules_for(competitor: str):
+    r = SITE_RULES.get(competitor, {}) or {}
+    return {
+        "host_allow": _compile_patterns(r.get("host_allow")),
+        "path_block": _compile_patterns(r.get("path_block")),
+        "page_allow": _compile_patterns(r.get("page_allow")),
+        "pdf_host_allow": _compile_patterns(r.get("pdf_host_allow")),
+        "line_patterns": {
+            k: _compile_patterns(v) for k, v in (r.get("line_patterns") or {}).items()
+        },
+        "pdf_path_line_hints": {k: re.compile(v) for k, v in (r.get("pdf_path_line_hints") or {}).items()}
+    }
+
+def _host_allowed(host_allow, netloc: str) -> bool:
+    return (not host_allow) or any(p.search(netloc) for p in host_allow)
+
+def _path_blocked(path_block, path: str) -> bool:
+    return any(p.search(path) for p in path_block)
+
+def _page_allowed(page_allow, path: str) -> bool:
+    return any(p.search(path) for p in page_allow)
+
+def infer_line_for_champion(url: str, anchor_text: str = "", page_text: str = "") -> tuple[str, float]:
+    """Return (line, confidence) using Champion-specific rules from site_rules.yaml."""
+    rules = _get_rules_for("Champion")
+    text = " ".join([url or "", anchor_text or "", page_text or ""])
+    # 1) PDF folder hints (highest confidence)
+    for line, rx in (rules["pdf_path_line_hints"] or {}).items():
+        if rx.search(url):
+            return line, 0.95
+    # 2) explicit line regex
+    scores = {}
+    for line, patt_list in (rules["line_patterns"] or {}).items():
+        for p in patt_list:
+            if p.search(text):
+                scores[line] = scores.get(line, 0) + 1
+    if scores:
+        best = max(scores, key=scores.get)
+        # confidence: normalized simple score
+        return best, min(0.90, 0.65 + 0.1 * scores[best])
+    return "Uncategorized", 0.0
+
+# --- replace the old looks_like_product_page with a rules-aware version ---
+def looks_like_product_page(url: str, competitor: str) -> bool:
+    u = urlparse(url)
+    path = u.path or "/"
+    # Global quick rejects
+    if any(x in url.lower() for x in ("/privacy", "/terms", "/sitemap", "/contact", "/search", "/careers")):
+        return False
+    # Per-competitor rules
+    r = _get_rules_for(competitor)
+    if r["path_block"] and _path_blocked(r["path_block"], path):
+        return False
+    if r["page_allow"]:
+        # Only allow what we explicitly whitelisted for this competitor
+        return _page_allowed(r["page_allow"], path)
+    # Fallback to original heuristic for competitors without site_rules
+    return any(x in url.lower() for x in ("/product", "/products/", "/our-products", "/rack", "/door", "/flight", "/dish", "/washer", "/categories/"))
+``
+
+
 # -------------------
 # Config loading (YAML)
 # -------------------
@@ -418,6 +493,46 @@ def crawl_seed(cur, competitor, line, url):
     for href, text in links:
         if href not in link_text_map:
             link_text_map[href] = text or ""
+
+# in crawl_seed(), right before we process PDFs:
+host = urlparse(url).netloc
+rules = _get_rules_for(competitor)
+
+# 1) Filter PDF candidates by allowed host (Champion-tight, others unchanged)
+pdf_candidates_filtered = set()
+for href in pdf_candidates:
+    h = urlparse(href).netloc
+    if _host_allowed(rules["pdf_host_allow"], h):
+        pdf_candidates_filtered.add(href)
+pdf_candidates = pdf_candidates_filtered or pdf_candidates  # fallback if no rules
+
+# ... when iterating PDFs (both on seed and subpages), infer correct product line:
+line_for_archive, conf = infer_line_for_champion(href, link_text_map.get(href, ""), "")
+use_line = line_for_archive if conf >= 0.6 else line  # keep seed line if low confidence
+
+change, prev_row = record_resource(cur, href, competitor, use_line, "pdf", dl_headers, dl_hash, text)
+# and pass `use_line` to archive_pdf(...)
+archived_path = archive_pdf(competitor, use_line, href, pdf_bytes, disp_name, sha_now)
+
+# 2) Subpage follow: use rules-aware looks_like_product_page
+for href, text in links:
+    if href in seen:
+        continue
+    if urlparse(href).netloc != host:
+        continue
+    if looks_like_product_page(href, competitor):
+        ph, ph_headers = get_html(href)
+        if not ph:
+            # ...
+            continue
+        ptitle, sub_links = extract_links(ph, href)
+        page_text = strip_main_text(ph)
+        # infer line again for page classification
+        page_line, lconf = infer_line_for_champion(href, text, page_text)
+        use_line = page_line if lconf >= 0.6 else line
+        content_hash = sha256_bytes(page_text.encode("utf-8"))
+        change, _ = record_resource(cur, href, competitor, use_line, "html", ph_headers, content_hash, ptitle)
+        # ...
 
     # Discover PDFs in seed HTML (absolute + relative) + anchor href PDFs
     pdf_candidates = set()
