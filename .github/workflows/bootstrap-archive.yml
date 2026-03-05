@@ -1,7 +1,29 @@
-name: WW Monitor – Bootstrap Archive (one-time, DEBUG)
+
+name: WW Monitor – Bootstrap Archive (one-time)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: "Enable verbose logs and archive ALL PDFs (for diagnostics)"
+        type: boolean
+        default: true
+        required: true
+      archive_all_pdfs:
+        description: "Force-archive any .pdf found (ignores classification)"
+        type: boolean
+        default: true
+        required: true
+      log_links:
+        description: "Print first 30 links found per page"
+        type: boolean
+        default: true
+        required: true
+      ua_override:
+        description: "Optional browser-like User-Agent"
+        type: string
+        default: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+        required: false
 
 permissions:
   contents: write
@@ -36,32 +58,31 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          # cache: 'pip'   # <-- removed to avoid error
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 lxml pyyaml
 
-      - name: Bootstrap full PDF archive (no email) — DEBUG
+      - name: Bootstrap full PDF archive (no email)
         env:
+          # Core behavior
           BOOTSTRAP_ARCHIVE: "1"
           SEND_MODE: GRAPH
           WRITE_PREVIEW: "0"
-
-          # Debug flags (turn OFF after validation)
-          LOG_LINKS: "1"
-          ARCHIVE_ALL_PDFS: "1"
-
-          # Optional Graph secrets (ignored during bootstrap exit)
-          GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
-          GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
+          # Debug toggles from inputs
+          ARCHIVE_ALL_PDFS: ${{ inputs.archive_all_pdfs && '1' || '0' }}
+          LOG_LINKS:        ${{ inputs.log_links && '1' || '0' }}
+          DEBUG_LOG:        ${{ inputs.debug_mode && '1' || '0' }}
+          UA_OVERRIDE:      ${{ inputs.ua_override }}
+          # Optional Graph secrets (safe even if not set; bootstrap exits before send)
+          GRAPH_TENANT_ID:     ${{ secrets.GRAPH_TENANT_ID }}
+          GRAPH_CLIENT_ID:     ${{ secrets.GRAPH_CLIENT_ID }}
           GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
-
           # Provided by Actions
           GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_ACTIONS: "true"
+          GITHUB_REF_NAME:   ${{ github.ref_name }}
+          GITHUB_ACTIONS:    "true"
         run: |
           set -euo pipefail
           python monitor_warewashing.py
@@ -95,4 +116,4 @@ jobs:
           if-no-files-found: warn
 
       - name: Done
-        run: echo "Bootstrap (DEBUG) finished."
+        run: echo "Bootstrap finished. Inspect artifacts and commit in the repo history."
