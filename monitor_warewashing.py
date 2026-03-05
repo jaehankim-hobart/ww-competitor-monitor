@@ -108,7 +108,6 @@ def looks_like_product_page(url: str, competitor: str) -> bool:
         return _page_allowed(r["page_allow"], path)
     # Fallback to original heuristic for competitors without site_rules
     return any(x in url.lower() for x in ("/product", "/products/", "/our-products", "/rack", "/door", "/flight", "/dish", "/washer", "/categories/"))
-``
 
 
 # -------------------
