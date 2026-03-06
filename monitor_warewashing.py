@@ -377,7 +377,7 @@ def build_github_raw_url(repo: str, branch: str, local_path: str) -> str:
 # -------------------
 # Site rules (generic) + line inference
 # -------------------
-def __patterns(patts):
+def _compile_patterns(patts):
     if not patts:
         return []
     if isinstance(patts, (list, tuple)):
