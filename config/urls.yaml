@@ -61,17 +61,28 @@ Noble:
   Flight Type:
     []  # N/A
 
+
 ADS:
   Door Type:
-    - https://www.americandish.com/dish-machines/
+    - "https://www.americandish.com/dish-machines/"              # index (captures Upright pages)
+    # (Optionally add direct upright pages if you have them)
+
   Undercounter:
-    - https://www.americandish.com/dish-machines/
-  Prep Washer:
-    - https://www.americandish.com/dish-machines/    
+    - "https://www.americandish.com/product/undercounter-dish-machine-etaf-3-etaf-m/"
+    - "https://www.americandish.com/product/undercounter-hub-40/"
+
   Rack Conveyor:
-    - https://www.americandish.com/dish-machines/
+    - "https://www.americandish.com/product/conveyor-dish-machine-adc-44-conveyor/"
+    - "https://www.americandish.com/product/conveyor-dish-machine-adc-66-conveyor/"
+
+  Prep Washer:
+    # If ADS exposes a Pot Washer product URL, add it here when you confirm it on site
+    # - "https://www.americandish.com/product/pot-washer/"
+
   Flight Type:
-    []  # N/A
+    # Currently no flight machines visible in ADS catalog—leave empty
+    # (If added later, we’ll update site_rules and seeds accordingly)
+
 
 Moyer Diebel:
   Door Type:
