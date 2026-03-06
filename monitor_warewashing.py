@@ -438,10 +438,19 @@ _RX_FLIGHT = [
 
 # ✔ PRO-number families belong to Rack Conveyor (44/54/64/66/76/80/86/90)
 #   These MUST be checked BEFORE Door/Undercounter.
+
 _RX_RACK = [
-    re.compile(r"\b(44|54|64|66|76|80|86|90)\s*PRO\b", re.I),
-    re.compile(r"\bRack\s*Conveyor(s)?\b", re.I),
+    # PRO-number families (most reliable)
+    re.compile(r"\b(44|54|64|66|76|80|86|90)\s*PRO\b", re.I),    
+    re.compile(r"\b(44|54|64|66|76|80|86|90)\s*PRO\b.*", re.I),  # allow trailing text like FF/HR/Steam/VHR/HD
+
+    # Also catch variants like “PRO 90B Loader/Unloader”
+    re.compile(r"\bPRO\s*90B\b", re.I),
+
+    # As fallback only (keep below)
+    re.compile(r"rack\s*conveyor", re.I),
 ]
+
 
 # ✔ Classic Door Type families
 _RX_DOOR = [
@@ -475,36 +484,36 @@ _RX_OTHER = [
     re.compile(r"\bMRA\b", re.I),
 ]
 
-def infer_line_global(text: str) -> tuple[str, float]:
-    """
-    Global deterministic precedence:
-    Rack must beat Flight for PRO-number machines.
-    """
-    
-    for rx in _RX_OTHER:
-        if rx.search(text):
-            return "Other", 0.95
-
+def infer_line_global(text: str):
+    # 1) Rack Conveyor first
     for rx in _RX_RACK:
         if rx.search(text):
             return "Rack Conveyor", 0.95
 
-    # Then Flight
+    # 2) Flight Type
     for rx in _RX_FLIGHT:
         if rx.search(text):
             return "Flight Type", 0.90
 
+    # 3) Door Type
     for rx in _RX_DOOR:
         if rx.search(text):
             return "Door Type", 0.90
 
+    # 4) Undercounter
     for rx in _RX_UNDER:
         if rx.search(text):
             return "Undercounter", 0.90
 
+    # 5) Prep Washer
     for rx in _RX_PP:
         if rx.search(text):
             return "Prep Washer", 0.90
+
+    # 6) Other LAST
+    for rx in _RX_OTHER:
+        if rx.search(text):
+            return "Other", 0.95
 
     return "Other", 0.50
 
