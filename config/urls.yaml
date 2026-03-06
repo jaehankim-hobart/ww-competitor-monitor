@@ -35,19 +35,27 @@ Meiko:
   Flight Type:
     - https://www.meiko.com/en-us/products/commercial-dishwashers/flight-type-dishwashers
 
+
 CMA:
   Door Type:
-    - https://cmadishmachines.com/cma-product-category/upright-high-temperature-commercial-dishwashers/
-    - https://cmadishmachines.com/cma-product-category/upright-low-temperature-dishwashers/
+    - "https://cmadishmachines.com/products/"            # product index (has Upright families)  # <- high-level index
+    - "https://cmadishmachines.com/product/model-180-straight/"    # door/hood example
+    - "https://cmadishmachines.com/product/model-cma-180-vl-fl/"   # ventless upright example
   Undercounter:
-    - https://cmadishmachines.com/cma-product-category/undercounter-low-temperature-dishwashers/
-    - https://cmadishmachines.com/cma-product-category/undercounter-high-temperature-dishwashers/
-  Prep Washer:
-    - https://cmadishmachines.com/cma-product-category/pot-washer/
+    - "https://cmadishmachines.com/product/model-uc50e/"           # undercounter high-temp
+    - "https://cmadishmachines.com/product/model-uc65e-m2/"        # undercounter high-temp
+    - "https://cmadishmachines.com/product/model-l-1x/"            # undercounter low-temp
   Rack Conveyor:
-    - https://cmadishmachines.com/cma-product-category/conveyor-dishwashers/
+    - "https://cmadishmachines.com/product/model-est-44/"          # conveyor 44
+    - "https://cmadishmachines.com/product/model-est-66/"          # conveyor 66
+    - "https://cmadishmachines.com/product/model-est-44-tall/"     # conveyor 44 tall
+    - "https://cmadishmachines.com/product/model-est-66-tall/"     # conveyor 66 tall
+  Prep Washer:
+    # If CMA posts a Pot Washer detail page, add it here (their site shows category copy; URLs vary)
+    # - "https://cmadishmachines.com/product/model-pt-15/"        # example if/when present
   Flight Type:
-    []  # N/A
+    # leave empty unless CMA publishes a Flight series
+
 
 Noble:
   Door Type:
