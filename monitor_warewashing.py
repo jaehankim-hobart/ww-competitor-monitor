@@ -809,6 +809,7 @@ def crawl_all(cur):
                 print(f"[SEED] {competitor} | {line} | {url}")
                 evs = crawl_seed(cur, competitor, line, url)
                 events.extend(evs)  # politeness delay
+                time.sleep(0.3)
     print(f"[SEEDS] Crawl finished with {len(events)} events")
     return events
 
@@ -841,6 +842,12 @@ def pivot_for_table(all_events):
         elif what == "Product page":
             short = display_url_label(e["url"], max_len=60)
             label = f'Product page {change}: {a(e["url"], short)}'
+            table[line][c].append(label)
+    
+        elif what == "Product tile":
+            # Prefer tile title; fallback to a compact label if missing
+            label_txt = (e.get("title") or display_url_label(e["url"], max_len=60))
+            label = f'Product tile {change}: {a(e["url"], label_txt)}'
             table[line][c].append(label)
 
     return competitors, table, na_map
@@ -906,7 +913,7 @@ def compose_email(all_events):
         # First column with icon
         cid, _ = line_icon_name(line)
         icon_html = (
-            f'cid:{cid}'
+            f'<img src="cid:{cid}" alt="{line}" width="48" height="48" style="display:block; margin:0 0 4px 0;">'
             if cid else ""
         )
         html.append(
@@ -1194,7 +1201,7 @@ def main():
         """, (
             datetime.now(timezone.utc).isoformat(),
             e["competitor"], e["line"], e["url"], e["what"], e["change"],
-            e.get("archived_path"), e.get("archived_url")
+            e.get("archived_path"), e.get("archived_url"), e.get("title")
         ))
     con.commit()
 
