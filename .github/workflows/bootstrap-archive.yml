@@ -1,119 +1,52 @@
-
-name: WW Monitor – Bootstrap Archive (one-time)
+# .github/workflows/bootstrap.yml
+name: Bootstrap Archive with Baseline Reports
 
 on:
   workflow_dispatch:
-    inputs:
-      debug_mode:
-        description: "Enable verbose logs and archive ALL PDFs (for diagnostics)"
-        type: boolean
-        default: true
-        required: true
-      archive_all_pdfs:
-        description: "Force-archive any .pdf found (ignores classification)"
-        type: boolean
-        default: true
-        required: true
-      log_links:
-        description: "Print first 30 links found per page"
-        type: boolean
-        default: true
-        required: true
-      ua_override:
-        description: "Optional browser-like User-Agent"
-        type: string
-        default: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
-        required: false
-
-permissions:
-  contents: write
-
-concurrency:
-  group: ww-bootstrap
-  cancel-in-progress: true
 
 jobs:
-  bootstrap-archive:
+  bootstrap:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
+      - uses: actions/checkout@v4
 
-      - name: Show git status
-        run: |
-          git rev-parse --abbrev-ref HEAD
-          git status --porcelain
-
-      - name: Print URLs configuration
-        run: |
-          echo "=== config/urls.yaml ==="
-          cat config/urls.yaml || echo "config/urls.yaml not found!"
-
-      - name: Set up Python 3.11
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4 lxml pyyaml
+          pip install requests beautifulsoup4 lxml pyyaml pandas scikit-learn joblib PyPDF2
 
-      - name: Bootstrap full PDF archive (no email)
+      - name: Run bootstrap crawl and archive
         env:
-          # Core behavior
           BOOTSTRAP_ARCHIVE: "1"
-          SEND_MODE: GRAPH
-          WRITE_PREVIEW: "0"
-          # Debug toggles from inputs (FIXED: '&&' not '&amp;&amp;')
-          ARCHIVE_ALL_PDFS: ${{ inputs.archive_all_pdfs && '1' || '0' }}
-          LOG_LINKS:        ${{ inputs.log_links && '1' || '0' }}
-          DEBUG_LOG:        ${{ inputs.debug_mode && '1' || '0' }}
-          UA_OVERRIDE:      ${{ inputs.ua_override }}
-          # Optional Graph secrets (safe even if not set; bootstrap exits before send)
-          GRAPH_TENANT_ID:     ${{ secrets.GRAPH_TENANT_ID }}
-          GRAPH_CLIENT_ID:     ${{ secrets.GRAPH_CLIENT_ID }}
-          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
-          # Provided by Actions
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REF_NAME:   ${{ github.ref_name }}
-          GITHUB_ACTIONS:    "true"
+          ARCHIVE_ALL_PDFS: "1"
         run: |
-          set -euo pipefail
           python monitor_warewashing.py
 
-      - name: Show tree after run
-        if: always()
+      # Build a baseline manifest/pivot from whatever was archived
+      - name: Classify (rules) — baseline
+        continue-on-error: true
         run: |
-          echo "==== repo root ===="
-          ls -la
-          echo "==== archive tree (first 200 files) ===="
-          if [ -d archive ]; then
-            find archive -type f | head -n 200
-          else
-            echo "archive/ does not exist"
-          fi
-          echo "==== sqlite state ===="
-          if [ -f state.db ]; then
-            ls -la state.db
-          else
-            echo "state.db not found"
-          fi
+          python -m classifier.rules
 
-      - name: Upload archived PDFs + DB (artifact)
-        if: always()
+      - name: ML fallback — baseline
+        continue-on-error: true
+        run: |
+          python -m classifier.ml_fallback
+
+      - name: Build pivot — baseline
+        continue-on-error: true
+        run: |
+          python -m reporting.build_reports
+
+      - name: Upload baseline artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ww-bootstrap-archives
+          name: bootstrap-reports
           path: |
-            archive/**/*
-            state.db
-          if-no-files-found: warn
-
-      - name: Done
-        run: echo "Bootstrap finished. Inspect artifacts and commit in the repo history."
+            output/manifest.csv
+            output/report_by_product_line.csv
