@@ -1,4 +1,3 @@
-
 Champion:
   # While stabilizing, you can leave this on. Once you're happy with coverage,
   # set to false to only archive recognized doc types (spec/brochure/datasheet) from code.
@@ -75,6 +74,10 @@ Champion:
       - "(?i)\\bPot\\s*&?\\s*Pan\\b"
       - "(?i)\\bP524\\b"
 
+  tile_selectors:
+    - ".product-card a"
+    - ".cards .card a"
+
 
 Jackson:
   # Allow PDFs from the main site and its media host(s) (adjust if they use a CDN)
@@ -118,6 +121,10 @@ Jackson:
       - "(?i)\\bDish\\s*Star\\b"
       - "(?i)\\bundercounter\\b"          # backup generic
 
+  tile_selectors:
+    - ".product-card a"
+    - ".products-grid .card-title a"
+
 
 ADS:
   # ADS = American Dish Service (americandish.com)
@@ -158,6 +165,11 @@ ADS:
       - "(?i)\\bpot\\s*washer\\b"             # ADS calls it Pot Washer
 
 
+  tile_selectors:
+    - ".product__title a"
+    - ".products a"
+
+
 CMA:
   # First-party host
   pdf_host_allow:
@@ -190,6 +202,11 @@ CMA:
       - "(?i)\\bundercounter\\b"
     Prep Washer:
       - "(?i)\\bpot\\s*washer\\b|\\bpot\\s*&\\s*pan\\b|\\bscullery\\b"
+
+
+  tile_selectors:
+    - ".product a"
+    - "h3.entry-title a"
 
 
 Douglas:
@@ -264,7 +281,94 @@ Moyer Diebel:
       - "(?i)\\bglass\\s*washer(s)?\\b"                    # common variant
       - "(?i)\\bSW(400|600)\\b|\\bDF(\\s*Revolution)?\\b"  # model lines called out in catalogs/specs
 
+  tile_selectors:
+    - ".product a"
+    - ".grid .card a"
+
   # (Optional) If you later find a distinct Pot & Pan product page for Moyer Diebel,
   # add a Prep Washer hint here:
   # pdf_path_line_hints:
   #   Prep Washer: "(?i)pot[ -]?washer|pot\\s*&\\s*pan"
+
+
+LVO:
+  # Restrict to first-party host
+  pdf_host_allow:
+    - "lvomfg.com"
+    - "www.lvomfg.com"
+
+  # Product pages to follow
+  page_allow:
+    - "/site/products/"
+    - "/site/product/"
+    - "/site/product-category/"
+
+  # ---------- Tile selectors (cards on category pages) ----------
+  # LVO uses WordPress + product grids. These selectors grab cards/titles on category & product index pages.
+  tile_selectors:
+    - ".products .product a"            # WooCommerce-style grid anchor
+    - ".product a"                      # fallback: any product card anchor
+    - "h2.woocommerce-loop-product__title a"
+
+  # ---------- High-confidence URL/path hints ----------
+  # We map common model families and URL slugs to lines (kept flexible).
+  pdf_path_line_hints:
+    Prep Washer: "(?i)/product/(fl|pt|pl)\\d+|/product-category/washers/pan-washers"
+    Rack Conveyor: "(?i)/product-category/washers/rack-washers"
+
+  # ---------- Text patterns across (url + anchor_text + page_text) ----------
+  line_patterns:
+    Prep Washer:
+      - "(?i)\\bFL\\d+\\b"              # FL10/14/25/36 ...
+      - "(?i)\\bPT\\d+\\b"              # PT10/14 ...
+      - "(?i)\\bpan\\s*&?\\s*rack\\s*washer\\b|\\bpan\\s*washer\\b"
+    Rack Conveyor:
+      - "(?i)\\brack\\s*washer\\b|\\brack\\s*washers\\b"
+
+
+Meiko:
+  # First-party domains (regional sites sometimes vary; add more if needed)
+  pdf_host_allow:
+    - "meiko.com"
+    - "www.meiko.com"
+
+  # Keep crawl focused on product families
+  page_allow:
+    - "/en-us/products/"
+    - "/en/products/"
+    - "/en-it/products/"
+    - "/en-us/knowledge-base/downloads"
+    - "/en/downloads-media/downloads"
+    - "/en-ae/downloads-media/downloads"
+
+  # ---------- Tile selectors ----------
+  # Meiko product family pages commonly use cards linking into model/detail pages.
+  tile_selectors:
+    - ".m-teaser a"
+    - ".teaser a"
+    - ".card a"
+    - ".product a"
+
+  # ---------- High-confidence URL/path hints ----------
+  pdf_path_line_hints:
+    Undercounter: "(?i)/undercounter.*(m-iclean|upster)\\w*|/undercounter-dishwashers-and-glasswashers"
+    Door Type: "(?i)/(hood|door)-type|m-iclean-h"
+    Rack Conveyor: "(?i)/rack.*(ka|upster-k)"
+    Flight Type: "(?i)/flight-type|m-iq-flight"
+    Prep Washer: "(?i)/(utensil|pot|pan).*washer|m-iclean-pf"
+
+  # ---------- Text patterns across (url + anchor_text + page_text) ----------
+  line_patterns:
+    Undercounter:
+      - "(?i)\\bm-?iclean\\s*u\\b"        # M-iClean U family
+      - "(?i)\\bupster\\s*u\\b"
+      - "(?i)\\bundercounter\\b|\\bglasswasher\\b"
+    Door Type:
+      - "(?i)\\bm-?iclean\\s*h\\b"
+      - "(?i)\\bhood\\s*type\\b|\\bdoor\\s*type\\b"
+    Rack Conveyor:
+      - "(?i)\\bka\\s*series\\b|\\bupster\\s*k\\b|\\brack\\s*type\\b"
+    Flight Type:
+      - "(?i)\\bm-?iq\\b.*\\bflight\\b|\\bflight\\s*type\\b"
+    Prep Washer:
+      - "(?i)\\bm-?iclean\\s*pf\\b|\\butensil\\s*washer\\b|\\bpot\\s*&?\\s*pan\\b"
