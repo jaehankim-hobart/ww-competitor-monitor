@@ -188,6 +188,46 @@ def extract_embedded_links(html: str, base: str) -> set[str]:
         out.add(urljoin(base, m.group(1)))
     return out
 
+def extract_tile_links(html: str, base_url: str, competitor: str) -> list[tuple[str, str]]:
+    """
+    Return (href, title) pairs for product tiles/cards.
+    Uses vendor selectors from site_rules.yaml, else a generic fallback.
+    """
+    out = []
+    soup = BeautifulSoup(html, "lxml")
+    selectors = _get_tile_selectors(competitor)
+
+    def add(a):
+        try:
+            href = a.get("href")
+            if not href:
+                return
+            href = urljoin(base_url, href)
+            title = a.get_text(" ", strip=True) or href
+            if len(title) >= 3:
+                out.append((href, title))
+        except Exception:
+            pass
+
+    if selectors:
+        for sel in selectors:
+            for a in soup.select(sel):
+                add(a)
+    else:
+        # Fallback: typical product grids (works on many WP/e‑comm sites)
+        for container in soup.select(".products, .product-grid, .cards, .grid, .row"):
+            for a in container.select("a"):
+                add(a)
+
+    # de‑dupe
+    seen, uniq = set(), []
+    for href, title in out:
+        key = (href, title.lower())
+        if key not in seen:
+            uniq.append((href, title))
+            seen.add(key)
+    return uniq
+
 # -------------------
 # PDF patterns & classification
 # -------------------
@@ -247,6 +287,23 @@ def init_db():
       archived_url TEXT
     )
     """)
+
+def tiles_get_previous(cur, competitor: str, line: str, page_url: str) -> dict[str, str]:
+    cur.execute("""
+        SELECT tile_href, tile_title
+        FROM catalog_tiles
+        WHERE competitor=? AND line=? AND page_url=?
+    """, (competitor, line, page_url))
+    return {row[0]: row[1] for row in cur.fetchall()}
+
+def tiles_upsert(cur, competitor: str, line: str, page_url: str, href: str, title: str):
+    now = datetime.now(timezone.utc).isoformat()
+    cur.execute("""
+      INSERT INTO catalog_tiles(competitor, line, page_url, tile_title, tile_href, first_seen, last_seen)
+      VALUES(?,?,?,?,?,?,?)
+      ON CONFLICT(competitor, line, page_url, tile_href)
+      DO UPDATE SET tile_title=excluded.tile_title, last_seen=excluded.last_seen
+    """, (competitor, line, page_url, title, href, now, now))
 
     # --------------------------------------------------------
     # NEW: store product tiles found on category/product pages
@@ -426,6 +483,20 @@ def _get_rules_for(competitor: str):
         "pdf_path_line_hints": {k: re.compile(v, re.I) for k, v in (r.get("pdf_path_line_hints") or {}).items()},
         "pdf_accept_all": bool(r.get("pdf_accept_all", False)),
     }
+
+
+def _get_tile_selectors(competitor: str) -> list[str]:
+    """
+    Optional CSS selectors from site_rules.yaml for product tiles/cards.
+    """
+    try:
+        rules = SITE_RULES.get(competitor, {}) or {}
+        sels = rules.get("tile_selectors") or []
+        if isinstance(sels, str):
+            sels = [sels]
+        return [s for s in sels if isinstance(s, str) and s.strip()]
+    except Exception:
+        return []
 
 def _host_allowed(host_allow, netloc: str) -> bool:
     return (not host_allow) or any(p.search(netloc) for p in host_allow)
