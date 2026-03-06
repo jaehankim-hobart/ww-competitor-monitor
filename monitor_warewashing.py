@@ -680,6 +680,47 @@ def crawl_seed(cur, competitor, line, url):
             "old_url": None, "archived_path": None, "archived_url": None
         })
 
+    # --- NEW: Tile extraction + diff on seed/category page ---
+    tiles = extract_tile_links(html, url, competitor)
+    if tiles:
+        prev = tiles_get_previous(cur, competitor, line, url)
+        seen_hrefs = set()
+
+        for href, ttitle in tiles:
+            seen_hrefs.add(href)
+            tiles_upsert(cur, competitor, line, url, href, ttitle)
+
+            # Classify the tile by its target (preferred), fallback to seed line
+            tline, tconf = infer_line_via_rules(href, ttitle, "", competitor)
+            use_line_for_tile = tline if tconf >= 0.70 else line
+
+            if href not in prev:
+                results.append({
+                    "competitor": competitor,
+                    "line": use_line_for_tile,
+                    "url": href,
+                    "title": ttitle,               # store title for bullets
+                    "what": "Product tile",
+                    "change": "added",
+                    "old_url": None,
+                    "archived_url": None,
+                    "archived_path": None
+                })
+
+        # (Optional) report removed tiles:
+        # for href in (set(prev.keys()) - seen_hrefs):
+        #     results.append({
+        #         "competitor": competitor,
+        #         "line": line,
+        #         "url": href,
+        #         "title": prev.get(href, ""),
+        #         "what": "Product tile",
+        #         "change": "removed",
+        #         "old_url": href,
+        #         "archived_url": None,
+        #         "archived_path": None
+        #     })
+
     # Anchor text map
     link_text_map = {}
     for href, text in links:
@@ -1267,12 +1308,13 @@ def main():
     # Persist crawl events
     for e in all_events:
         cur.execute("""
-        INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url)
-        VALUES(?,?,?,?,?,?,?,?)
+          INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url, title)
+          VALUES(?,?,?,?,?,?,?,?,?)
         """, (
-            datetime.now(timezone.utc).isoformat(),
-            e["competitor"], e["line"], e["url"], e["what"], e["change"],
-            e.get("archived_path"), e.get("archived_url"), e.get("title")
+          datetime.now(timezone.utc).isoformat(),
+          e["competitor"], e["line"], e["url"], e["what"], e["change"],
+          e.get("archived_path"), e.get("archived_url"),
+          e.get("title")             # may be None for non‑tile events
         ))
     con.commit()
 
