@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -131,6 +130,7 @@ def a(href: str, label: str) -> str:
     label = label or (href if href != "#" else "link")
     return f'<a href="{href}">{label}</a>'
 
+
 def display_url_label(href: str, max_len: int = 60) -> str:
     try:
         u = urlparse(href)
@@ -214,9 +214,12 @@ def classify_pdf(text_or_url: str):
 # -------------------
 DB_PATH = os.getenv("STATE_DB", "state.db")
 
+
 def init_db():
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
+
+    # Existing tables (unchanged)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS resources(
       url TEXT PRIMARY KEY,
@@ -231,6 +234,7 @@ def init_db():
       last_seen TEXT
     )
     """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS events(
       ts TEXT,
@@ -243,6 +247,33 @@ def init_db():
       archived_url TEXT
     )
     """)
+
+    # --------------------------------------------------------
+    # NEW: store product tiles found on category/product pages
+    # --------------------------------------------------------
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS catalog_tiles(
+      competitor TEXT,
+      line       TEXT,
+      page_url   TEXT,
+      tile_title TEXT,
+      tile_href  TEXT,
+      first_seen TEXT,
+      last_seen  TEXT,
+      PRIMARY KEY (competitor, line, page_url, tile_href)
+    )
+    """)
+
+    # -----------------------------------------------
+    # OPTIONAL: add 'title' column on events (one-time)
+    # lets us persist tile titles for email bullets
+    # -----------------------------------------------
+    try:
+        cur.execute("ALTER TABLE events ADD COLUMN title TEXT")
+    except Exception:
+        # Column probably exists already—ignore
+        pass
+
     con.commit()
     return con
 
