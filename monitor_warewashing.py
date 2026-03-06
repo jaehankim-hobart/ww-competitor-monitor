@@ -146,7 +146,7 @@ def display_url_label(href: str, max_len: int = 60) -> str:
     except Exception:
         return href
 
-ACRONYM_KEEP = {"PRO", "VHR", "ER", "HT", "LT", "HR", "ADA", "NSF", "UL"}
+ACRONYM_KEEP = {"PRO", "VHR", "ER", "HT", "LT", "HR"}
 
 def beautify_filename(url_or_name: str) -> str:
     name = unquote(url_or_name.split("?")[0].split("#")[0].split("/")[-1])
