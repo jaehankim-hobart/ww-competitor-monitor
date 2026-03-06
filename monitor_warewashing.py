@@ -441,7 +441,6 @@ _RX_FLIGHT = [
 _RX_RACK = [
     re.compile(r"\b(44|54|64|66|76|80|86|90)\s*PRO\b", re.I),
     re.compile(r"\bRack\s*Conveyor(s)?\b", re.I),
-    re.compile(r"\b(loader|unloader)\b", re.I),
 ]
 
 # ✔ Classic Door Type families
@@ -469,12 +468,23 @@ _RX_PP = [
     re.compile(r"\bP524\b", re.I),
 ]
 
+_RX_OTHER = [
+    re.compile(r"waste\s*handling", re.I),
+    re.compile(r"dehydrator", re.I),
+    re.compile(r"\bCSS\b", re.I),
+    re.compile(r"\bMRA\b", re.I),
+]
+
 def infer_line_global(text: str) -> tuple[str, float]:
     """
     Global deterministic precedence:
     Rack must beat Flight for PRO-number machines.
     """
-    # Rack first for your dataset
+    
+    for rx in _RX_OTHER:
+        if rx.search(text):
+            return "Other", 0.95
+
     for rx in _RX_RACK:
         if rx.search(text):
             return "Rack Conveyor", 0.95
