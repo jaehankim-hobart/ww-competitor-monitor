@@ -377,7 +377,7 @@ def build_github_raw_url(repo: str, branch: str, local_path: str) -> str:
 # -------------------
 # Site rules (generic) + line inference
 # -------------------
-def _compile_patterns(patts):
+def __patterns(patts):
     if not patts:
         return []
     if isinstance(patts, (list, tuple)):
@@ -426,34 +426,42 @@ def looks_like_product_page(url: str, competitor: str) -> bool:
     return any(x in low for x in ("/product", "/products/", "/our-products", "/rack", "/door", "/flight", "/dish", "/washer", "/categories/"))
 
 # ---- Deterministic precedence rules for product-line (global) ----
-# Flight > Rack > Door > Undercounter > Prep Washer
+# Flight > Rack > Door > Undercounter > Prep Washer > Other
+
 _RX_FLIGHT = [
-    re.compile(r"\bEUCCW?\b", re.I),        # EUCC/EUCCW => Flight
-    re.compile(r"\bflight\b", re.I),
-    re.compile(r"\bPRO\s*Flight\b", re.I),
-    re.compile(r"\bE\s*Series\s*Flight\b", re.I),
-    re.compile(r"\bFlight Machine\b", re.I),
-    re.compile(r"\bHeat Recovery Flight\b", re.I),
+    re.compile(r"\b(EUCCW?|EUCC)\b", re.I),              # EUCC/EUCCW are Flight
+    re.compile(r"\bPRO\s*Flight\b", re.I),               # PRO Flight Series
+    re.compile(r"\bE\s*Series\s*Flight\b", re.I),        # E Series Flight
+    re.compile(r"\bFlight\s*Machine\b", re.I),
+    re.compile(r"\bFlight\s*Type\b", re.I),
 ]
+
+# ✔ PRO-number families belong to Rack Conveyor (44/54/64/66/76/80/86/90)
+#   These MUST be checked BEFORE Door/Undercounter.
 _RX_RACK = [
-    re.compile(r"\brack\s*conveyor(s)?\b", re.I),
-    re.compile(r"\b(loader|unloader)\b", re.I),
     re.compile(r"\b(44|54|64|66|76|80|86|90)\s*PRO\b", re.I),
-    re.compile(r"\bPRO\s*90B\b", re.I),
+    re.compile(r"\bRack\s*Conveyor(s)?\b", re.I),
+    re.compile(r"\b(loader|unloader)\b", re.I),
 ]
+
+# ✔ Classic Door Type families
 _RX_DOOR = [
     re.compile(r"\b(DH|DL)\s*\d", re.I),
-    re.compile(r"\bHood Type\b", re.I),
-    re.compile(r"\bTall Hood\b", re.I),
-    re.compile(r"\bDoor Type\b", re.I),
+    re.compile(r"\bHood\s*Type\b", re.I),
+    re.compile(r"\bTall\s*Hood\b", re.I),
+    re.compile(r"\bDoor\s*Type\b", re.I),
 ]
+
+# ✔ Undercounter (UH/UL/Glasswasher/CG/UCC)
 _RX_UNDER = [
     re.compile(r"\bGlasswasher(s)?\b", re.I),
     re.compile(r"\bCG[0-9 ]*\b", re.I),
-    re.compile(r"\bU(H|L|HM|HB)\s*\d{2,4}[A-Z]?\b", re.I),  # UH200, UL130, UHM4, etc.
+    re.compile(r"\bU(H|L|HM|HB)\s*\d{2,4}[A-Z]?\b", re.I),
     re.compile(r"\bUCC(W)?\b", re.I),
     re.compile(r"\bUndercounter\b", re.I),
 ]
+
+# ✔ Pot & Pan / Prep Washer
 _RX_PP = [
     re.compile(r"\bPP\b", re.I),
     re.compile(r"\bPP\s*\d+\b", re.I),
@@ -462,18 +470,33 @@ _RX_PP = [
 ]
 
 def infer_line_global(text: str) -> tuple[str, float]:
-    """Deterministic precedence rules returning (line, confidence)."""
-    for rx in _RX_FLIGHT:
-        if rx.search(text): return FLIGHT, 0.9
+    """
+    Global deterministic precedence:
+    Rack must beat Flight for PRO-number machines.
+    """
+    # Rack first for your dataset
     for rx in _RX_RACK:
-        if rx.search(text): return RACK, 0.9
+        if rx.search(text):
+            return "Rack Conveyor", 0.95
+
+    # Then Flight
+    for rx in _RX_FLIGHT:
+        if rx.search(text):
+            return "Flight Type", 0.90
+
     for rx in _RX_DOOR:
-        if rx.search(text): return DOOR, 0.9
+        if rx.search(text):
+            return "Door Type", 0.90
+
     for rx in _RX_UNDER:
-        if rx.search(text): return UNDER, 0.9
+        if rx.search(text):
+            return "Undercounter", 0.90
+
     for rx in _RX_PP:
-        if rx.search(text): return PREP, 0.9
-    return "Uncategorized", 0.0
+        if rx.search(text):
+            return "Prep Washer", 0.90
+
+    return "Other", 0.50
 
 def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor: str) -> tuple[str, float]:
     """
@@ -504,7 +527,7 @@ def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor:
         best = max(scores, key=scores.get)
         return best, min(0.95, 0.80 + 0.05 * scores[best])
 
-    return "Uncategorized", 0.0
+    return "Other", 0.5
 
 # -------------------
 # Crawl logic
