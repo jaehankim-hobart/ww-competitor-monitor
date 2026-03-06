@@ -118,3 +118,42 @@ Jackson:
       - "(?i)\\bDish\\s*Star\\b"
       - "(?i)\\bundercounter\\b"          # backup generic
 
+
+ADS:
+  # ADS = American Dish Service (americandish.com)
+  # Allow first-party hosts (add CDN if you see PDFs under a separate domain)
+  pdf_host_allow:
+    - "americandish.com"
+    - "www.americandish.com"
+
+  # Keep crawl focused on product content
+  page_allow:
+    - "/dish-machines/"           # product index & category pages
+    - "/product/"                 # individual product pages
+
+  # ---------- Strong URL/path hints (high confidence classification) ----------
+  pdf_path_line_hints:
+    Rack Conveyor: "(?i)/conveyor|\\bADC-(44|66)\\b"
+    Undercounter: "(?i)undercounter|\\bET[- ]?AF\\b|\\bHUB[- ]?40\\b"
+    Door Type: "(?i)upright|/door|\\bAF\\b|\\bAFC\\b|\\bL[- ]?Series\\b|\\bAWS\\b|\\bHT[- ]?(25|34)\\b|\\b5[- ]?(CD|AG)\\b"
+    Prep Washer: "(?i)pot[- ]?washer"   # ADS “Pot Washer Machine” -> your Prep Washer
+
+  # ---------- Text patterns across (url + anchor_text + page_text) ----------
+  line_patterns:
+    Rack Conveyor:
+      - "(?i)\\bADC[- ]?(44|66)\\b"           # conveyor models (ADC-44 / ADC-66)
+      - "(?i)\\bconveyor\\b"
+    Undercounter:
+      - "(?i)\\bET[- ]?AF\\b"                 # ET-AF undercounter family
+      - "(?i)\\bHUB[- ]?40\\b"                # HUB-40 undercounter
+      - "(?i)\\bundercounter\\b"
+    Door Type:
+      - "(?i)\\bAF\\b|\\bAFC\\b"              # AF/AFC series (upright/door type)
+      - "(?i)\\bL\\s*Series\\b"               # L Series
+      - "(?i)\\bAWS(-H)?\\b"                  # AWS / AWS-H
+      - "(?i)\\bHT[- ]?(25|34)\\b"            # HT-25 / HT-34
+      - "(?i)\\b5[- ]?CD\\b|\\b5[- ]?AG(-S|-ES)?\\b"   # 5-CD, 5-AG(-S/-ES)
+      - "(?i)\\bupright\\b|\\bdoor\\s*type\\b"        # safety net
+    Prep Washer:
+      - "(?i)\\bpot\\s*washer\\b"             # ADS calls it Pot Washer
+
