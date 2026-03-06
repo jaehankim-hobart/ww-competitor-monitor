@@ -1,53 +1,63 @@
 
-name: WW Daily Monitor (7AM ET)
+# .github/workflows/daily.yml
+name: Daily Crawl • Classify • Email
 
 on:
   schedule:
-    # 7:00 AM US/Eastern on weekdays (GitHub uses UTC; 12:00 UTC = 7:00 ET during Standard Time)
-    - cron: '0 12 * * 1-5'
-  workflow_dispatch: {}   # allow manual runs too
-
-# Must have write permissions so the job can push archived PDFs
-permissions:
-  contents: write
+    - cron: "15 7 * * *"   # daily at 07:15
+  workflow_dispatch:
 
 jobs:
-  run:
+  daily:
     runs-on: ubuntu-latest
     steps:
-      # ⬇️ Checkout FIRST, with full history and credentials.
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install dependencies
-        run: pip install requests beautifulsoup4 lxml pyyaml
-
-      - name: Run competitor monitor (real crawl & send or print)
-        env:
-          SEND_MODE: GRAPH
-          MAIL_FROM: "ww-monitor@itwfeg.com"
-          MAIL_TO: "jaehan.kim@itwfeg.com"
-          GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
-          GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
-          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
-          # Optional (defaults shown):
-          # ARCHIVE_DIR: "archive"
+      - name: Install deps
         run: |
-          set -e
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 lxml pyyaml pandas scikit-learn joblib PyPDF2 msal
+
+      # Crawl (writes PDFs into archive/**, commits/pushes archives)
+      - name: Crawl competitors
+        env:
+          # Optional: control behavior
+          ARCHIVE_ALL_PDFS: "0"
+        run: |
           python monitor_warewashing.py
 
-      - name: Upload archived PDFs (for convenience)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ww-monitor-archives
-          path: archive/**/*
-          if-no-files-found: ignore
+      # The updated monitor_warewashing already tries to run the post-crawl pipeline
+      # and attach files when sending. If you prefer to run it explicitly, you can add:
+      - name: Classify (rules) — explicit
+        run: |
+          python -m classifier.rules
+
+      - name: ML fallback — explicit
+        run: |
+          python -m classifier.ml_fallback
+
+      - name: Build pivot — explicit
+        run: |
+          python -m reporting.build_reports
+
+      # If you want to send the email from the workflow (instead of from the script),
+      # uncomment the next step and disable sending inside monitor_warewashing.py
+      # by setting SEND_MODE=NONE or similar.
+      - name: Email report via Graph (optional if not sending in script)
+        if: ${{ false }}  # set to true if you move sending here
+        env:
+          GRAPH_TENANT_ID: ${{ secrets.TENANT_ID }}
+          GRAPH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          MAIL_TO: "jaehan.kim@yourco.com"
+        run: |
+          python email_graph.py \
+            --to "$MAIL_TO" \
+            --subject "WW Competitor Monitor — $(date +'%Y-%m-%d')" \
+            --attach output/manifest.csv \
+            --attach output/report_by_product_line.csv
