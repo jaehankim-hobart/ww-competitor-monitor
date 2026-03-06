@@ -299,7 +299,7 @@ def init_db():
       PRIMARY KEY (competitor, line, page_url, tile_href)
     )
     """)
-        try:
+    try:
         cur.execute("ALTER TABLE events ADD COLUMN title TEXT")
     except Exception:
         # Column probably exists already—ignore
