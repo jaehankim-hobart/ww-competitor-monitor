@@ -287,6 +287,26 @@ def init_db():
       archived_url TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS catalog_tiles(
+      competitor TEXT,
+      line       TEXT,
+      page_url   TEXT,
+      tile_title TEXT,
+      tile_href  TEXT,
+      first_seen TEXT,
+      last_seen  TEXT,
+      PRIMARY KEY (competitor, line, page_url, tile_href)
+    )
+    """)
+        try:
+        cur.execute("ALTER TABLE events ADD COLUMN title TEXT")
+    except Exception:
+        # Column probably exists already—ignore
+        pass
+
+    con.commit()
+    return con
 
 def tiles_get_previous(cur, competitor: str, line: str, page_url: str) -> dict[str, str]:
     cur.execute("""
@@ -305,34 +325,6 @@ def tiles_upsert(cur, competitor: str, line: str, page_url: str, href: str, titl
       DO UPDATE SET tile_title=excluded.tile_title, last_seen=excluded.last_seen
     """, (competitor, line, page_url, title, href, now, now))
 
-    # --------------------------------------------------------
-    # NEW: store product tiles found on category/product pages
-    # --------------------------------------------------------
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS catalog_tiles(
-      competitor TEXT,
-      line       TEXT,
-      page_url   TEXT,
-      tile_title TEXT,
-      tile_href  TEXT,
-      first_seen TEXT,
-      last_seen  TEXT,
-      PRIMARY KEY (competitor, line, page_url, tile_href)
-    )
-    """)
-
-    # -----------------------------------------------
-    # OPTIONAL: add 'title' column on events (one-time)
-    # lets us persist tile titles for email bullets
-    # -----------------------------------------------
-    try:
-        cur.execute("ALTER TABLE events ADD COLUMN title TEXT")
-    except Exception:
-        # Column probably exists already—ignore
-        pass
-
-    con.commit()
-    return con
 
 def get_existing_resource(cur, url):
     cur.execute("""
@@ -1115,7 +1107,7 @@ def _build_file_attachments(paths: list[str]) -> list[dict]:
         })
     return out
 
-def send_via_graph(subject, html_body, file_paths: list[str] | None = None):
+def send_via_graph(subject, html_body, file_paths=None):
     token_url = f"https://login.microsoftonline.com/{GRAPH_TENANT}/oauth2/v2.0/token"
     data = {
         "client_id": GRAPH_CLIENT_ID,
