@@ -191,3 +191,80 @@ CMA:
     Prep Washer:
       - "(?i)\\bpot\\s*washer\\b|\\bpot\\s*&\\s*pan\\b|\\bscullery\\b"
 
+
+Douglas:
+  # First-party host(s) for Douglas Manufacturing
+  pdf_host_allow:
+    - "dougmac.com"
+    - "www.dougmac.com"
+
+  # (Optional) keep product discovery focused
+  page_allow:
+    - "/product"
+    - "/wp-content/uploads"
+
+  # High-confidence hint: any Douglas PDF => Prep Washer
+  pdf_path_line_hints:
+    Prep Washer: "(?s).*"
+
+  # Safety net for HTML/text classification as well
+  line_patterns:
+    Prep Washer:
+      - "(?s).+"   # match anything so HTML pages also land in Prep Washer
+
+
+
+Moyer Diebel:
+  # First-party hosts
+  pdf_host_allow:
+    - "moyerdiebel.com"
+    - "www.moyerdiebel.com"
+
+  # Keep crawl focused on product pages and support docs
+  page_allow:
+    - "/product/"
+    - "/undercounter-dishwashers/"
+    - "/rack-conveyors/"
+    - "/customer-support/"
+    - "/product-catalog/"
+    - "/spec-sheet-library/"
+
+  # ---------- High-confidence URL/path hints ----------
+  # These fire at ~0.90 confidence whenever the PDF URL or page path contains the hints.
+  pdf_path_line_hints:
+    Rack Conveyor: "(?i)/rack-conveyors/|\\bMD(44|66)[ -]?Plus\\b|\\bMC(44|66)[ -]?Plus\\b"
+    Door Type: "(?i)/product/MDHHD|/product/MD2000|/product/MD2000LT|/product/MDHHD-VL|/door|/hood"
+    Undercounter: "(?i)/undercounter-dishwashers/|\\b(201LT|201HT|383HT|601HRG|601HTG|601LTG)\\b"
+    # Glasswashers are reported as Undercounter in your taxonomy
+    # (SW400/600, DF/DF Revolution appear under "Glass Washers" in their catalog)
+    # We treat any "glass" path as Undercounter:
+    Undercounter (Glass): "(?i)/glass|SW(400|600)|\\bDF\\b|DF\\s*Revolution"
+
+  # ---------- Text patterns across (url + anchor_text + page_text) ----------
+  line_patterns:
+    Rack Conveyor:
+      - "(?i)\\bMD(44|66)[ -]?Plus\\b"    # MD44 Plus / MD66 Plus rack conveyor
+      - "(?i)\\bMC(44|66)[ -]?Plus\\b"    # MC44 Plus / MC66 Plus (naming in spec library)
+      - "(?i)\\brack\\s*conveyor\\b"
+    Door Type:
+      - "(?i)\\bMDHHD(-VL)?\\b"           # MDHHD / MDHHD-VL
+      - "(?i)\\bMD2000(LT)?\\b"           # MD2000 / MD2000LT
+      - "(?i)\\bdoor\\s*type\\b|\\bhood\\s*type\\b"
+   
+    Undercounter:
+      # existing undercounter families
+      - "(?i)\\b201(LT|HT)\\b"
+      - "(?i)\\b383HT\\b"
+      - "(?i)\\b601(HRG|HTG|LTG)\\b"
+      - "(?i)\\bundercounter\\b"
+      # map glasswashers → Undercounter (category exists on site; models appear under undercounter/glass)
+      - "(?i)\\bglasswasher(s)?\\b"
+      - "(?i)\\bglass\\s*washing\\s*machine(s)?\\b"        # <-- NEW explicit phrase
+      - "(?i)\\bglasswashing\\s*machine(s)?\\b"            # <-- NEW explicit phrase (no space)
+      - "(?i)\\bglass\\s*washer(s)?\\b"                    # common variant
+      - "(?i)\\bSW(400|600)\\b|\\bDF(\\s*Revolution)?\\b"  # model lines called out in catalogs/specs
+
+  # (Optional) If you later find a distinct Pot & Pan product page for Moyer Diebel,
+  # add a Prep Washer hint here:
+  # pdf_path_line_hints:
+  #   Prep Washer: "(?i)pot[ -]?washer|pot\\s*&\\s*pan"
