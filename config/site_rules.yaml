@@ -157,3 +157,37 @@ ADS:
     Prep Washer:
       - "(?i)\\bpot\\s*washer\\b"             # ADS calls it Pot Washer
 
+
+CMA:
+  # First-party host
+  pdf_host_allow:
+    - "cmadishmachines.com"
+    - "www.cmadishmachines.com"
+
+  # Product pages you want to follow
+  page_allow:
+    - "/products/"
+    - "/product/"
+
+  # High-confidence URL/path hints for classification
+  pdf_path_line_hints:
+    Rack Conveyor: "(?i)/product/model-est-(44|66)(-tall)?/|\\bEST[- ]?(44|66)\\b"
+    Door Type: "(?i)/upright|/product/model-180|\\bCMA[- ]?180\\b"
+    Undercounter: "(?i)/undercounter|/product/model-uc(50e|65e)|\\bUC(50E|65E)\\b|\\bL[- ]?1X\\b"
+    Prep Washer: "(?i)pot[- ]?washer|scullery|pot\\s*&\\s*pan"
+
+  # Brand terms searched across (url + anchor_text + page_text)
+  line_patterns:
+    Rack Conveyor:
+      - "(?i)\\bEST[- ]?(44|66)\\b"
+      - "(?i)\\bconveyor\\b"
+    Door Type:
+      - "(?i)\\bCMA[- ]?180\\b"         # 180 upright family
+      - "(?i)\\bupright\\b|\\bdoor\\s*type\\b"
+    Undercounter:
+      - "(?i)\\bUC(50E|65E)\\b"
+      - "(?i)\\bL[- ]?1X\\b"
+      - "(?i)\\bundercounter\\b"
+    Prep Washer:
+      - "(?i)\\bpot\\s*washer\\b|\\bpot\\s*&\\s*pan\\b|\\bscullery\\b"
+
