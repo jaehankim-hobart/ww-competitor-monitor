@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+lxml
+pyyaml
+pandas
+scikit-learn
+joblib
+PyPDF2
+m
