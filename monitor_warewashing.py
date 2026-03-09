@@ -883,14 +883,21 @@ def crawl_seed(cur, competitor, line, url):
                         archived_url2 = build_github_raw_url(GITHUB_REPOSITORY, GITHUB_REF_NAME, archived_path2)
 
                 print(f"[ARCHIVE:SUB] {competitor} | {use_line2} | {disp_name2} -> {archived_path2 or 'NO BYTES'}")
+                
                 results.append({
                     "competitor": competitor,
                     "line": use_line2,
-                    "url": pdf_url,
+                    "url": pdf_url,                     # vendor website URL
                     "what": doc_kind2,
                     "change": ch2,
                     "old_url": prev_row2["url"] if (prev_row2 and ch2 == "updated") else None,
+                
+                    # Keep the existing field for backward compatibility
                     "archived_url": archived_url2,
+                
+                    # NEW: explicitly indicate the 'new' archived file for today's event
+                    "new_archived_url": archived_url2,
+                
                     "archived_path": archived_path2
                 })
 
@@ -923,18 +930,28 @@ def pivot_for_table(all_events):
 
     for e in all_events:
         c, line, what, change = e["competitor"], e["line"], e["what"], e["change"]
+
         if what in ("Spec Sheet", "Brochure", "Data Sheet"):
             if change == "updated":
-                old_href = e.get("archived_url") or e.get("old_url") or e["url"]
-                old_label = "Archived prior version" if e.get("archived_url") else "Old version"
+                # Prefer archived links when available
+                new_href = e.get("new_archived_url") or e.get("archived_url") or e["url"]
+                new_label = "New archived" if (e.get("new_archived_url") or e.get("archived_url")) else "New (website)"
+        
+                # If you later add `old_archived_url`, prefer it here; otherwise use old_url or vendor URL
+                old_href = e.get("old_archived_url") or e.get("old_url") or e["url"]
+                old_label = "Old archived" if e.get("old_archived_url") else ("Old (website)" if e.get("old_url") else "Old (same URL)")
+        
                 label = (
                     f'{what} updated: '
-                    f'{a(e["url"], beautify_filename(e["url"]))} '
-                    f'(old: {a(old_href, old_label)} → new: {a(e["url"], beautify_filename(e["url"]))})'
+                    f'{a(new_href, beautify_filename(e["url"]))} '
+                    f'(old: {a(old_href, old_label)} → new: {a(new_href, new_label)})'
                 )
             else:
-                label = f'{what} {change}: {a(e["url"], beautify_filename(e["url"]))}'
+                # For "added", prefer the archived link when available
+                href = e.get("new_archived_url") or e.get("archived_url") or e["url"]
+                label = f'{what} {change}: {a(href, beautify_filename(e["url"]))}'
             table[line][c].append(label)
+
 
         elif what == "Product page":
             short = display_url_label(e["url"], max_len=60)
