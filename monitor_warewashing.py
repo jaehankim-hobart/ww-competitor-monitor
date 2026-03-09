@@ -790,6 +790,7 @@ def crawl_seed(cur, competitor, line, url):
                 "change": change,
                 "old_url": prev_row["url"] if (prev_row and change == "updated") else None,
                 "archived_url": archived_url,
+                "new_archived_url": archived_url,
                 "archived_path": archived_path
             })
 
