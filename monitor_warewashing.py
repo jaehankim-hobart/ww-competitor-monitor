@@ -523,32 +523,17 @@ def looks_like_product_page(url: str, competitor: str) -> bool:
 # Flight > Rack > Door > Undercounter > Prep Washer > Other
 
 _RX_FLIGHT = [
-    re.compile(r"\b(EUCCW?|EUCC)\b", re.I),              # EUCC/EUCCW are Flight
-    re.compile(r"\bPRO\s*Flight\b", re.I),               # PRO Flight Series
-    re.compile(r"\bE\s*Series\s*Flight\b", re.I),        # E Series Flight
     re.compile(r"\bFlight\s*Machine\b", re.I),
     re.compile(r"\bFlight\s*Type\b", re.I),
 ]
 
-# ✔ PRO-number families belong to Rack Conveyor (44/54/64/66/76/80/86/90)
-#   These MUST be checked BEFORE Door/Undercounter.
-
 _RX_RACK = [
-    # PRO-number families (most reliable)
-    re.compile(r"\b(44|54|64|66|76|80|86|90)\s*PRO\b", re.I),    
-    re.compile(r"\b(44|54|64|66|76|80|86|90)\s*PRO\b.*", re.I),  # allow trailing text like FF/HR/Steam/VHR/HD
-
-    # Also catch variants like “PRO 90B Loader/Unloader”
-    re.compile(r"\bPRO\s*90B\b", re.I),
-
-    # As fallback only (keep below)
     re.compile(r"rack\s*conveyor", re.I),
 ]
 
 
 # ✔ Classic Door Type families
 _RX_DOOR = [
-    re.compile(r"\b(DH|DL)\s*\d", re.I),
     re.compile(r"\bHood\s*Type\b", re.I),
     re.compile(r"\bTall\s*Hood\b", re.I),
     re.compile(r"\bDoor\s*Type\b", re.I),
@@ -556,26 +541,33 @@ _RX_DOOR = [
 
 # ✔ Undercounter (UH/UL/Glasswasher/CG/UCC)
 _RX_UNDER = [
-    re.compile(r"\bGlasswasher(s)?\b", re.I),
-    re.compile(r"\bCG[0-9 ]*\b", re.I),
-    re.compile(r"\bU(H|L|HM|HB)\s*\d{2,4}[A-Z]?\b", re.I),
-    re.compile(r"\bUCC(W)?\b", re.I),
-    re.compile(r"\bUndercounter\b", re.I),
+    # glasswasher / glass wash / glass washing / glass washing machine
+    re.compile(r"\bglass\s*washer(s)?\b", re.I),                 # glass washer / glass washers
+    re.compile(r"\bglass\s*washing(?:\s*machine(s)?)?\b", re.I), # glass washing / glass washing machine(s)
+    re.compile(r"\bglasswasher(s)?\b", re.I),                    # glasswasher (no space)
+    # generic undercounter keywords
+    re.compile(r"\bundercounter\b", re.I),
 ]
 
-# ✔ Pot & Pan / Prep Washer
+
+# ✔ Pot & Pan / Prep Washer — brand-agnostic global signals
 _RX_PP = [
-    re.compile(r"\bPP\b", re.I),
-    re.compile(r"\bPP\s*\d+\b", re.I),
-    re.compile(r"\bPot\s*&?\s*Pan\b", re.I),
-    re.compile(r"\bP524\b", re.I),
+    # "prep washer" / "prep-washer" / "prep washers"
+    re.compile(r"\bprep[\s\-]*washer(s)?\b", re.I),
+    # "pot washer" / "pot-washer" / "pot washers"
+    re.compile(r"\bpot[\s\-]*washer(s)?\b", re.I),
+    # "pot & pan washer" / "pot and pan washer" (singular/plural; flexible spacing)
+    # Also covers "pot & pans washer(s)" (rare but handled by optional s on 'pan')
+    re.compile(r"\bpot\s*(?:&|and)\s*pan(s)?\s*washer(s)?\b", re.I),
+    # "pan washer" / "pan-washer" / "pan washers" (some sites lead with 'pan')
+    re.compile(r"\bpan[\s\-]*washer(s)?\b", re.I),
+    # Optional but helpful: many brands market these as "utensil washer(s)"
+    re.compile(r"\butensil(s)?\s*washer(s)?\b", re.I),
 ]
 
 _RX_OTHER = [
     re.compile(r"waste\s*handling", re.I),
     re.compile(r"dehydrator", re.I),
-    re.compile(r"\bCSS\b", re.I),
-    re.compile(r"\bMRA\b", re.I),
 ]
 
 def infer_line_global(text: str):
