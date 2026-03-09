@@ -72,6 +72,11 @@ DEFAULT_LINES = [
 COMPETITOR_COLS = COMP_CONF.get("competitors", DEFAULT_COMPETITORS)
 LINES_ORDER = COMP_CONF.get("lines", DEFAULT_LINES)
 
+
+# --- Ensure "Other" exists so pivot never fails ---
+if "Other" not in LINES_ORDER:
+    LINES_ORDER = LINES_ORDER + ["Other"]
+
 DOOR, UNDER, PREP, RACK, FLIGHT = (
     "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
 )
@@ -951,7 +956,6 @@ def pivot_for_table(all_events):
                 href = e.get("new_archived_url") or e.get("archived_url") or e["url"]
                 label = f'{what} {change}: {a(href, beautify_filename(e["url"]))}'
             table[line][c].append(label)
-
 
         elif what == "Product page":
             short = display_url_label(e["url"], max_len=60)
