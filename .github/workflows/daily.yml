@@ -4,60 +4,91 @@ name: Daily Crawl • Classify • Email
 
 on:
   schedule:
-    - cron: "15 7 * * *"   # daily at 07:15
+    - cron: "15 7 * * *"  # NOTE: UTC time. 07:15 UTC = 02:15/03:15 US Eastern depending on DST.
   workflow_dispatch:
+
+permissions:
+  contents: write     # needed to push archived PDFs back to repo
+  actions: read
+
+concurrency:
+  group: daily-crawl
+  cancel-in-progress: false
 
 jobs:
   daily:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true  # allows git push via GITHUB_TOKEN
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 lxml pyyaml pandas scikit-learn joblib PyPDF2 msal
 
-      # Crawl (writes PDFs into archive/**, commits/pushes archives)
-      - name: Crawl competitors
+      # --- MAIN SCRIPT: crawl + archive + compose email (prints if no Graph creds) ---
+      - name: Crawl, archive, classify, and compose email (no-send if no creds)
         env:
-          # Optional: control behavior
+          # Optional toggles; safe defaults while stabilizing:
           ARCHIVE_ALL_PDFS: "0"
-        run: |
-          python monitor_warewashing.py
-
-      # The updated monitor_warewashing already tries to run the post-crawl pipeline
-      # and attach files when sending. If you prefer to run it explicitly, you can add:
-      - name: Classify (rules) — explicit
-        run: |
-          python -m classifier.rules
-
-      - name: ML fallback — explicit
-        run: |
-          python -m classifier.ml_fallback
-
-      - name: Build pivot — explicit
-        run: |
-          python -m reporting.build_reports
-
-      # If you want to send the email from the workflow (instead of from the script),
-      # uncomment the next step and disable sending inside monitor_warewashing.py
-      # by setting SEND_MODE=NONE or similar.
-      - name: Email report via Graph (optional if not sending in script)
-        if: ${{ false }}  # set to true if you move sending here
-        env:
+          DEBUG_LOG: "0"
+          # Email-related envs; script will SKIP sending if any are missing:
           GRAPH_TENANT_ID: ${{ secrets.TENANT_ID }}
           GRAPH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
           GRAPH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          MAIL_TO: "jaehan.kim@yourco.com"
+          MAIL_TO: ${{ secrets.MAIL_TO }}  # optional; script has a default
         run: |
-          python email_graph.py \
-            --to "$MAIL_TO" \
-            --subject "WW Competitor Monitor — $(date +'%Y-%m-%d')" \
-            --attach output/manifest.csv \
-            --attach output/report_by_product_line.csv
+          python monitor_warewashing.py
+
+      # --- OPTIONAL: run classifier pipeline explicitly (your script already does this) ---
+      # Enable these only if you disable the in-script pipeline.
+      # - name: Classify (rules) — explicit
+      #   run: python -m classifier.rules
+      #
+      # - name: ML fallback — explicit
+      #   run: python -m classifier.ml_fallback
+      #
+      # - name: Build pivot — explicit
+      #   run: python -m reporting.build_reports
+
+      # Upload reports and preview when email is not sent (no creds),
+      # so you can still inspect results from the Actions UI.
+      - name: Upload outputs (manifest & pivot) if present
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-monitor-outputs
+          path: |
+            output/manifest.csv
+            output/manifest.rules.csv
+            output/report_by_product_line.csv
+            preview.html
+          if-no-files-found: ignore
+
+      # If you want to move sending OUT of the script and into the workflow,
+      # un-comment below and set SEND_MODE=NONE inside the script to skip sending there.
+      # This step is guarded by secrets check.
+      # - name: Email report via Graph (alternative to in-script send)
+      #   if: ${{ secrets.TENANT_ID && secrets.CLIENT_ID && secrets.CLIENT_SECRET }}
+      #   env:
+      #     GRAPH_TENANT_ID: ${{ secrets.TENANT_ID }}
+      #     GRAPH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      #     GRAPH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+      #     MAIL_TO: ${{ secrets.MAIL_TO }}
+      #   run: |
+      #     python email_graph.py \
+      #       --to "$MAIL_TO" \
+      #       --subject "WW Competitor Monitor — $(date +'%Y-%m-%d')" \
+      #       --attach output/manifest.csv \
+      #       --attach output/report_by_product_line.csv
