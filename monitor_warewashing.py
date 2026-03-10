@@ -380,7 +380,13 @@ def record_resource(cur, url, competitor, line, kind, headers, content_hash, tit
 # HTTP helpers
 # -------------------
 REQUEST_TIMEOUT = 25
-DEFAULT_UA = "WW-Competitor-Monitor/1.0 (+market intel; contact: ww-monitor@itwfeg.com)"
+
+DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+
 session = requests.Session()
 session.headers.update({"User-Agent": os.getenv("UA_OVERRIDE", DEFAULT_UA)})
 
