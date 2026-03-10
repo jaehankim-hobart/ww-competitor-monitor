@@ -43,7 +43,7 @@ jobs:
         env:
           # Optional toggles; safe defaults while stabilizing:
           ARCHIVE_ALL_PDFS: "0"
-          DEBUG_LOG: "0"
+          DEBUG_LOG: "1"
           # Email-related envs; script will SKIP sending if any are missing:
           GRAPH_TENANT_ID: ${{ secrets.TENANT_ID }}
           GRAPH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
