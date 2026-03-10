@@ -70,8 +70,7 @@ DEFAULT_LINES = [
 COMPETITOR_COLS = COMP_CONF.get("competitors", DEFAULT_COMPETITORS)
 LINES_ORDER     = COMP_CONF.get("lines", DEFAULT_LINES)
 if "Other" not in LINES_ORDER:
-    LINES_ORDER = LINES_ORDER + ["Other"]
-
+    LINES_ORDER = LINES_ORDER + ["Other"]  # ← keep 'Other' row to prevent KeyError
 DOOR, UNDER, PREP, RACK, FLIGHT = (
     "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
 )
@@ -128,7 +127,7 @@ def ensure_archive_tree():
 def a(href: str, label: str) -> str:
     href = href or "#"
     label = label or (href if href != "#" else "link")
-    return f'<a href="{href}">{label}</a>'
+    return f'{href}{label}</a>'
 
 def display_url_label(href: str, max_len: int = 60) -> str:
     try:
@@ -169,10 +168,10 @@ def beautify_filename(url_or_name: str) -> str:
 def extract_embedded_links(html: str, base: str) -> set[str]:
     """Find product links present in onclick/data attributes/JS helpers."""
     out = set()
-    # onclick="location.href='...'"/"window.location='...'"
-    for m in re.finditer(r'onclick\s*=\s*"(?:location\.href|window\.location)\s*=\s*[\'"]([^\'"]+)[\'"]', html, re.I):
+    # onclick="location.href='...'" / "window.location='...'"
+    for m in re.finditer(r'onclick\s*=\s*"(?:location\.href|window\.location)\s*=\s*[^\'"]+[\'"]', html, re.I):
         out.add(urljoin(base, m.group(1)))
-    for m in re.finditer(r"onclick\s*=\s*'(?:location\.href|window\.location)\s*=\s*[\"']([^\"']+)[\"']", html, re.I):
+    for m in re.finditer(r"onclick\s*=\s*'(?:location\.href|window\.location)\s*=\s*[^\"']+[\"']", html, re.I):
         out.add(urljoin(base, m.group(1)))
     # data-url="/path/to/product/"
     for m in re.finditer(r'data-url\s*=\s*"([^"]+)"', html, re.I):
@@ -180,7 +179,7 @@ def extract_embedded_links(html: str, base: str) -> set[str]:
     for m in re.finditer(r"data-url\s*=\s*'([^']+)'", html, re.I):
         out.add(urljoin(base, m.group(1)))
     # goToProduct('/path/...'), openProduct("...")
-    for m in re.finditer(r'(?:goToProduct|openProduct)\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', html, re.I):
+    for m in re.finditer(r'(?:goToProduct|openProduct)\s*\(\s*[^\'"]+[\'"]\s*\)', html, re.I):
         out.add(urljoin(base, m.group(1)))
     return out
 
@@ -376,7 +375,6 @@ def record_resource(cur, url, competitor, line, kind, headers, content_hash, tit
 # HTTP helpers
 # -------------------
 REQUEST_TIMEOUT = 25
-
 DEFAULT_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -384,7 +382,7 @@ DEFAULT_UA = (
 )
 
 session = requests.Session()
-# Strong, browser-like default headers
+# Strong, browser-like default headers (fix for Cloudflare/WP)
 session.headers.update({
     "User-Agent": os.getenv("UA_OVERRIDE", DEFAULT_UA),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
@@ -440,7 +438,8 @@ def head(url):
 
 def get_pdf_hash(url):
     r = safe_request("GET", url)
-    if not r: return None, None
+    if not r:
+        return None, None
     return sha256_bytes(r.content), r.headers
 
 def extract_links(html, base):
@@ -554,18 +553,15 @@ _RX_FLIGHT = [
     re.compile(r"\bFlight\s*Type\b", re.I),
     re.compile(r"\bFlight\s*Machine\b", re.I),
 ]
-
 _RX_RACK = [
     re.compile(r"rack\s*conveyor", re.I),
 ]
-
 _RX_DOOR = [
     re.compile(r"\bHood\s*Type\b", re.I),
     re.compile(r"\bDoor\s*Type\b", re.I),
     re.compile(r"\bTall\s*Hood\b", re.I),
     re.compile(r"\b(DH|DL)\s*\d", re.I),
 ]
-
 # Improved Undercounter (glass washer variants)
 _RX_UNDER = [
     re.compile(r"\bglass\s*washer(s)?\b", re.I),
@@ -573,7 +569,6 @@ _RX_UNDER = [
     re.compile(r"\bglasswasher(s)?\b", re.I),
     re.compile(r"\bundercounter\b", re.I),
 ]
-
 # Expanded Prep Washer signals
 _RX_PP = [
     re.compile(r"\bprep[\s\-]*washer(s)?\b", re.I),
@@ -582,7 +577,6 @@ _RX_PP = [
     re.compile(r"\bpan[\s\-]*washer(s)?\b", re.I),
     re.compile(r"\butensil(s)?\s*washer(s)?\b", re.I),
 ]
-
 _RX_OTHER = [
     re.compile(r"waste\s*handling", re.I),
     re.compile(r"dehydrator", re.I),
@@ -627,15 +621,12 @@ def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor:
     line, conf = infer_line_global(text)
     if conf >= 0.90:
         return line, conf
-
     # 2) Per-site rules
     rules = _get_rules_for(competitor)
-
     # Strong hints from PDF path
     for line_key, rx in (rules["pdf_path_line_hints"] or {}).items():
         if rx.search(url):
             return line_key, 0.90
-
     # Pattern scores
     scores = {}
     for line_key, patt_list in (rules["line_patterns"] or {}).items():
@@ -645,7 +636,6 @@ def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor:
     if scores:
         best = max(scores, key=scores.get)
         return best, min(0.95, 0.80 + 0.05 * scores[best])
-
     return "Other", 0.5
 
 # -------------------
@@ -655,7 +645,7 @@ ABS_PDF_RX = re.compile(r'https?://[^"\'<>]+?\.pdf(?:\?[^"\'<>]*)?', re.I)
 REL_PDF_RX = re.compile(r'(?:(?:\./|\../|/)[^"\'<>\s]+?\.pdf(?:\?[^"\'<>\s]*)?)', re.I)
 
 def crawl_seed(cur, competitor, line, url):
-    # PRIME host (important for CF/WP before any deep GET)
+    # PRIME host (important for CF/WP)
     prime_host_session(url)
 
     html, headers = get_html(url)
@@ -686,7 +676,7 @@ def crawl_seed(cur, competitor, line, url):
         if href not in link_text_map:
             link_text_map[href] = text or ""
 
-    # Discover PDFs in seed HTML + anchor href PDFs
+    # Discover PDFs on seed page
     pdf_candidates = set()
     for m in ABS_PDF_RX.finditer(html):
         pdf_candidates.add(urljoin(url, m.group(0)))
@@ -710,10 +700,10 @@ def crawl_seed(cur, competitor, line, url):
     if filtered_pdf_candidates:
         pdf_candidates = filtered_pdf_candidates
 
-    # Accept-all PDFs if configured (env or site rule)
+    # Accept-all PDFs (env or site rule)
     archive_all = os.getenv("ARCHIVE_ALL_PDFS", "0") == "1" or rules.get("pdf_accept_all", False)
 
-    # ---- 1) Handle PDFs on seed page
+    # ---- 1) PDFs on seed
     seen = set()
     for href in sorted(pdf_candidates):
         if href in seen:
@@ -723,8 +713,7 @@ def crawl_seed(cur, competitor, line, url):
         if not archive_all and not (PDF_PATTERNS.search(href) or PDF_PATTERNS.search(text)):
             continue
 
-        # HEAD → fallback GET for hash/headers
-        # (Some sites require referer for assets; set referer to the page that linked the PDF)
+        # HEAD → fallback GET for hash/headers with Referer=seed page
         session.headers["Referer"] = url
         try:
             h = head(href)
@@ -734,24 +723,21 @@ def crawl_seed(cur, competitor, line, url):
         finally:
             session.headers.pop("Referer", None)
 
-        # Classify doc type (fallback to Brochure if accept-all)
         doc_kind = classify_pdf(f"{href} {text}") or ("Brochure" if archive_all else None)
         if not doc_kind:
             continue
 
-        # Infer product line via global rules + site rules
         inferred_line, conf = infer_line_via_rules(href, text, "", competitor)
         use_line = inferred_line if conf >= 0.60 else line
 
         change, prev_row = record_resource(cur, href, competitor, use_line, "pdf", dl_headers, dl_hash, text)
         if change in ("added", "updated"):
-            # Download & archive
+            # Download & archive (with Referer=seed page)
             session.headers["Referer"] = url
             try:
                 pdf_resp = safe_request("GET", href)
                 pdf_bytes = pdf_resp.content if pdf_resp else None
                 if pdf_bytes is None:
-                    # retry once
                     pdf_resp = safe_request("GET", href)
                     pdf_bytes = pdf_resp.content if pdf_resp else None
             finally:
@@ -778,7 +764,7 @@ def crawl_seed(cur, competitor, line, url):
                 "archived_path": archived_path
             })
 
-    # ---- 2) Crawl product pages (same host), one hop
+    # ---- 2) One-hop product pages (same host)
     for href, text in links:
         u = urlparse(href)
         if u.netloc != host:
@@ -786,7 +772,7 @@ def crawl_seed(cur, competitor, line, url):
         if not looks_like_product_page(href, competitor):
             continue
 
-        # Some sites require Referer for subpages. Set it to the seed page.
+        # GET subpage with Referer=seed page
         session.headers["Referer"] = url
         try:
             ph, ph_headers = get_html(href)
@@ -802,11 +788,9 @@ def crawl_seed(cur, competitor, line, url):
             sub_links.extend((e, "") for e in sorted(embedded_sub))
         page_text = strip_main_text(ph)
 
-        # Infer line from URL + page text
         inferred_line, conf = infer_line_via_rules(href, text, page_text, competitor)
         use_line = inferred_line if conf >= 0.60 else line
 
-        # Record the subpage itself
         content_hash = sha256_bytes(page_text.encode("utf-8"))
         change, _ = record_resource(cur, href, competitor, use_line, "html", ph_headers, content_hash, ptitle)
         if change in ("added", "updated"):
@@ -816,7 +800,7 @@ def crawl_seed(cur, competitor, line, url):
                 "old_url": None, "archived_path": None, "archived_url": None
             })
 
-        # Discover PDFs on the subpage
+        # PDFs on subpage
         sub_pdf_candidates = set()
         for m in ABS_PDF_RX.finditer(ph):
             sub_pdf_candidates.add(urljoin(href, m.group(0)))
@@ -826,7 +810,6 @@ def crawl_seed(cur, competitor, line, url):
             if is_pdf(sub_href):
                 sub_pdf_candidates.add(sub_href)
 
-        # Apply allowed PDF hosts
         filtered_sub_pdf_candidates = set()
         for pdf_url in sub_pdf_candidates:
             if _host_allowed(rules["pdf_host_allow"], urlparse(pdf_url).netloc):
@@ -837,11 +820,11 @@ def crawl_seed(cur, competitor, line, url):
             sub_pdf_candidates = filtered_sub_pdf_candidates
 
         for pdf_url in sorted(sub_pdf_candidates):
-            sub_text = ""  # could parse nearby link text if needed
+            sub_text = ""
             if not archive_all and not (PDF_PATTERNS.search(pdf_url) or PDF_PATTERNS.search(sub_text)):
                 continue
 
-            # HEAD/GET may require referer to the product page
+            # HEAD/GET with Referer=subpage
             session.headers["Referer"] = href
             try:
                 h2 = head(pdf_url)
@@ -855,13 +838,11 @@ def crawl_seed(cur, competitor, line, url):
             if not doc_kind2:
                 continue
 
-            # Infer product line for archive folder
             page_line2, lconf2 = infer_line_via_rules(pdf_url, sub_text, "", competitor)
             use_line2 = page_line2 if lconf2 >= 0.60 else use_line
 
             ch2, prev_row2 = record_resource(cur, pdf_url, competitor, use_line2, "pdf", dl_headers2, dl_hash2, sub_text)
             if ch2 in ("added", "updated"):
-                # Download & archive (again with referer)
                 session.headers["Referer"] = href
                 try:
                     pdf_resp2 = safe_request("GET", pdf_url)
@@ -903,7 +884,6 @@ def crawl_seed(cur, competitor, line, url):
             for thref, ttitle in tiles:
                 seen_hrefs.add(thref)
                 tiles_upsert(cur, competitor, line, url, thref, ttitle)
-                # classify tile by its target
                 tline, tconf = infer_line_via_rules(thref, ttitle, "", competitor)
                 use_line_for_tile = tline if tconf >= 0.70 else line
                 if thref not in prev:
@@ -946,7 +926,7 @@ def pivot_for_table(all_events):
     extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
     competitors += [c for c in sorted(set(extras))]
 
-    table  = {line: {c: [] for c in competitors} for line in LINES_ORDER}
+    table = {line: {c: [] for c in competitors} for line in LINES_ORDER}
     na_map = build_na_map()
 
     for e in all_events:
@@ -956,7 +936,6 @@ def pivot_for_table(all_events):
 
         if what in ("Spec Sheet", "Brochure", "Data Sheet"):
             if change == "updated":
-                # Prefer archived links when available
                 new_href  = e.get("new_archived_url") or e.get("archived_url") or e["url"]
                 new_label = "New archived" if (e.get("new_archived_url") or e.get("archived_url")) else "New (website)"
                 old_href  = e.get("old_archived_url") or e.get("old_url") or e["url"]
@@ -1002,11 +981,7 @@ def line_icon_name(line: str):
 # -------------------
 def compose_email(all_events):
     """
-    Build the subject + HTML body:
-    - Fixed column width per column (table-layout: fixed)
-    - Shade first column same as header, show icon above product-line text
-    - Shade cells with updates using EMAIL_UPDATE_BG
-    - Show 'N/A' if urls.yaml has [] for that competitor+line
+    Build the subject + HTML body
     """
     if all_events:
         comps = sorted({e["competitor"] for e in all_events})
@@ -1040,9 +1015,12 @@ def compose_email(all_events):
     # Rows
     for line in LINES_ORDER:
         html.append("<tr>")
-        # First column with icon
+        # First column with icon (restore proper <img/>)
         cid, _ = line_icon_name(line)
-        icon_html = f'cid:{cid}' if cid else ""
+        icon_html = (
+            f'cid:{cid}'
+            if cid else ""
+        )
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
@@ -1087,7 +1065,7 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 
 def _build_inline_attachments_for_lines() -> list[dict]:
-    """Build Microsoft Graph inline fileAttachment objects for any icons that exist in ./assets."""
+    """Build inline icon attachments for Graph."""
     attachments = []
     for line in LINES_ORDER:
         cid, path = line_icon_name(line)
@@ -1097,16 +1075,15 @@ def _build_inline_attachments_for_lines() -> list[dict]:
             data = f.read()
         attachments.append({
             "@odata.type": "#microsoft.graph.fileAttachment",
-            "name": cid,            # attachment filename
-            "contentId": cid,       # must match cid in cid:...
-            "isInline": True,       # inline display
+            "name": cid,
+            "contentId": cid,
+            "isInline": True,
             "contentBytes": base64.b64encode(data).decode("utf-8"),
             "contentType": "image/png"
         })
     return attachments
 
 def _build_file_attachments(paths: list[str]) -> list[dict]:
-    """Standard file attachments (non-inline) for Graph sendMail."""
     out = []
     for p in (paths or []):
         if not p or not os.path.exists(p):
@@ -1179,16 +1156,11 @@ def send_via_smtp(subject, html_body):
 # Git commit & push for archives
 # -------------------
 def git_commit_and_push(paths: list[str], message: str = "chore: archive updated PDFs"):
-    """
-    Commit and push the given files to the current branch (uses GITHUB_TOKEN in Actions).
-    No-op if 'paths' is empty or running outside GitHub Actions without creds.
-    """
     paths = [p for p in (paths or []) if p]
     if not paths:
         print("[ARCHIVE] No files to commit.")
         return
     if not os.getenv("GITHUB_ACTIONS"):
-        # local dev: skip auto-commit to avoid unintended pushes
         print("[ARCHIVE] Skipping git push (not in GitHub Actions). Files saved locally:")
         for p in paths:
             print(" -", p)
@@ -1210,7 +1182,6 @@ def git_commit_and_push(paths: list[str], message: str = "chore: archive updated
 # Preview utilities (optional)
 # -------------------
 def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
-    """Writes a standalone HTML file for easy preview in SAMPLE mode."""
     html = f"""<!doctype html>
 <html>
 <head>
@@ -1228,9 +1199,126 @@ def write_preview_file(subject: str, body: str, fname: str = "preview.html"):
 def sample_events_for_preview():
     return [
         {"competitor":"Champion","line":"Rack Conveyor","url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.09-2025.pdf","what":"Spec Sheet","change":"updated","old_url":"https://www.championindustries.com/content/spec-sheets/Rack-Conveyors/44-PRO-VHR_Electric_Rev.08-2025.pdf","archived_url":None,"new_archived_url":None,"archived_path":None},
-        {"competitor":"Jackson","line":"Rack Conveyor","url":"https://www.jacksonwws.com/wp-content/uploads
+        {"competitor":"Jackson","line":"Rack Conveyor","url":"https://www.jacksonwws.com/wp-content/uploads/2026/02/RackStar_66_ER_brochure.pdf","what":"Brochure","change":"added","old_url":None,"archived_url":None,"new_archived_url":None,"archived_path":None},
+        {"competitor":"CMA","line":"Door Type","url":"https://cmadishmachines.com/product/model-180-straight/","what":"Product page","change":"updated","old_url":None,"archived_url":None,"new_archived_url":None,"archived_path":None},
+        {"competitor":"Meiko","line":"Undercounter","url":"https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers/fv-402-g","what":"Product page","change":"added","old_url":None,"archived_url":None,"new_archived_url":None,"archived_path":None},
+        {"competitor":"Douglas","line":"Prep Washer","url":"https://www.dougmac.com/wp-content/uploads/2024/08/Product-Sheet-Bucket-Pan-Washer.pdf","what":"Brochure","change":"added","old_url":None,"archived_url":None,"new_archived_url":None,"archived_path":None},
+        {"competitor":"LVO","line":"Prep Washer","url":"https://www.lvomfg.com/site/product/fl36/","what":"Product page","change":"updated","old_url":None,"archived_url":None,"new_archived_url":None,"archived_path":None},
+        {"competitor":"ADS","line":"Door Type","url":"https://www.americandish.com/product/upright-dish-machine-af-afc-es/","what":"Product page","change":"added","old_url":None,"archived_url":None,"new_archived_url":None,"archived_path":None},
+        {"competitor":"Moyer Diebel","line":"Undercounter","url":"https://moyerdiebel.com/content/specs/383HT_Spec_Sheet.pdf","what":"Spec Sheet","change":"added","old_url":None,"archived_url":None,"new_archived_url":None,"archived_path":None},
+        {"competitor":"Jackson","line":"Flight Type","url":"https://www.jacksonwws.com/products/flightstar/","what":"Product page","change":"updated","old_url":None,"archived_url":None,"new_archived_url":None,"archived_path":None},
+    ]
 
-         
+# -------------------
+# Post-crawl: build manifest (rules -> ML), pivot, return attachments
+# -------------------
+def build_reports_and_get_attachments() -> list[str]:
+    if not _CLASSIFIER_AVAILABLE:
+        print("[REPORT] Classifier modules not available; skipping attachments.")
+        return []
+    # 1) Rules pass -> manifest.rules.csv
+    run_rules_only(write_symlinks=True)
+    rules_csv = os.path.join(str(CLASS_OUT_DIR), "manifest.rules.csv")
+    # 2) ML fallback -> manifest.csv
+    import pandas as pd
+    df_rules = pd.read_csv(rules_csv)
+    apply_fallback(df_rules)  # writes output/manifest.csv
+    manifest_csv = os.path.join(str(CLASS_OUT_DIR), "manifest.csv")
+    # 3) Pivot -> report_by_product_line.csv
+    build_pivot(manifest_csv, os.path.join(str(CLASS_OUT_DIR), "report_by_product_line.csv"))
+    pivot_csv = os.path.join(str(CLASS_OUT_DIR), "report_by_product_line.csv")
+    return [manifest_csv, pivot_csv]
+
+# -------------------
+# Main
+# -------------------
+def main():
+    con = init_db()
+    cur = con.cursor()
+
+    # Ensure archive structure exists
+    ensure_archive_tree()
+
+    use_samples   = os.getenv("SAMPLE_EVENTS") == "1"
+    force_preview = os.getenv("WRITE_PREVIEW") == "1"
+
+    print(f"[INFO] BOOTSTRAP_ARCHIVE={os.getenv('BOOTSTRAP_ARCHIVE')} "
+          f"SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} WRITE_PREVIEW={os.getenv('WRITE_PREVIEW')} "
+          f"ARCHIVE_ALL_PDFS={os.getenv('ARCHIVE_ALL_PDFS')}")
+
+    # --- BOOTSTRAP: crawl & archive, push, and exit (no email) ---
+    if BOOTSTRAP and not use_samples:
+        print("[BOOTSTRAP] Starting full archive …")
+        all_events = crawl_all(cur)
+        con.commit()
+        archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
+        num_archived   = len([p for p in archived_files if p])
+        print(f"[BOOTSTRAP] Discovered {len(all_events)} events; archived files: {num_archived}")
+        if num_archived:
+            git_commit_and_push([p for p in archived_files if p], "bootstrap: initial PDF archive")
+            print(f"[BOOTSTRAP] Archived and pushed {num_archived} PDFs.")
+        else:
+            print("[BOOTSTRAP] No PDFs discovered to archive (check seeds/logs).")
+        print("[BOOTSTRAP] Done. Exiting without sending email.")
+        return
+
+    # --- Daily / Sample runs ---
+    if use_samples:
+        all_events = sample_events_for_preview()
+    else:
+        all_events = crawl_all(cur)
+
+    # Persist crawl events (now includes new_archived_url / old_archived_url)
+    for e in all_events:
+        cur.execute("""
+          INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url, title, new_archived_url, old_archived_url)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            datetime.now(timezone.utc).isoformat(),
+            e["competitor"], e["line"], e["url"], e["what"], e["change"],
+            e.get("archived_path"), e.get("archived_url"),
+            e.get("title"),
+            e.get("new_archived_url"),
+            e.get("old_archived_url"),
+        ))
+    con.commit()
+
+    subject, body = compose_email(all_events)
+
+    # Commit/push any archived PDFs we just saved
+    archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
+    if archived_files:
+        git_commit_and_push([p for p in archived_files if p], "chore: archive PDFs for today")
+
+    # Build preview if enabled
+    if use_samples or force_preview:
+        write_preview_file(subject, body, "preview.html")
+
+    # Build attachments (manifest.csv + pivot) if classifier modules present
+    attachments = []
+    try:
+        attachments = build_reports_and_get_attachments()
+    except Exception as ex:
+        print(f"[REPORT] Failed to build attachments: {ex}")
+
+    # Send
+    if SEND_MODE.upper() == "GRAPH":
+        if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
+            print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
+            print("=== SUBJECT ==="); print(subject)
+            print("=== HTML BODY ==="); print(body)
+            if attachments:
+                print("Attachments:", attachments)
+            return
+        send_via_graph(subject, body, file_paths=attachments)
+    else:
+        if use_samples:
+            print("SAMPLE mode with SMTP selected—printing only.")
+            print("=== SUBJECT ==="); print(subject)
+            print("=== HTML BODY ==="); print(body)
+            return
+        send_via_smtp(subject, body)
+
 # -------------------
 # Entry point
 # -------------------
