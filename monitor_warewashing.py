@@ -376,6 +376,7 @@ def record_resource(cur, url, competitor, line, kind, headers, content_hash, tit
     cur.execute("UPDATE resources SET last_seen=? WHERE url=?", (now, url))
     return None, prev
 
+
 # -------------------
 # HTTP helpers
 # -------------------
@@ -388,7 +389,21 @@ DEFAULT_UA = (
 )
 
 session = requests.Session()
-session.headers.update({"User-Agent": os.getenv("UA_OVERRIDE", DEFAULT_UA)})
+session.headers.update({
+    "User-Agent": os.getenv("UA_OVERRIDE", DEFAULT_UA),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
+              "image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    # Sec-Fetch* are not strictly required, but they often help with CDNs:
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+})
+
 
 def safe_request(method, url):
     try:
