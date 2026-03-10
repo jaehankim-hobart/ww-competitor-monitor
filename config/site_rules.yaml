@@ -170,43 +170,45 @@ ADS:
     - ".products a"
 
 
+
 CMA:
-  # First-party host
+  # 1) Allow first‑party host where PDFs live
   pdf_host_allow:
     - "cmadishmachines.com"
     - "www.cmadishmachines.com"
 
-  # Product pages you want to follow
+  # 2) Focus product discovery on product pages + allow follow of direct PDF links
   page_allow:
-    - "/products/"
-    - "/product/"
+    - "/products/"            # product/category
+    - "/product/"             # individual product pages
+    - "/wp-content/uploads/"  # follow hard-linked PDFs from any page
 
-  # High-confidence URL/path hints for classification
+  # 3) Strong URL hints → instant classification when the PDF path matches
   pdf_path_line_hints:
-    Rack Conveyor: "(?i)/product/model-est-(44|66)(-tall)?/|\\bEST[- ]?(44|66)\\b"
-    Door Type: "(?i)/upright|/product/model-180|\\bCMA[- ]?180\\b"
-    Undercounter: "(?i)/undercounter|/product/model-uc(50e|65e)|\\bUC(50E|65E)\\b|\\bL[- ]?1X\\b"
-    Prep Washer: "(?i)pot[- ]?washer|scullery|pot\\s*&\\s*pan"
+    Rack Conveyor: "(?i)/product/model-est-(44|66)(?:-|/)|\\bEST[-_ ]?(44|66)\\b"
+    Door Type: "(?i)/upright|/product/model-180|\\bCMA[-_ ]?180\\b|\\bdoor[-_ ]?type\\b"
+    Undercounter: "(?i)/undercounter|/product/model-uc(50e|65e)|\\bUC(50E|65E)\\b|\\bL[-_ ]?1X\\b"
+    Prep Washer: "(?i)pot[-_ ]?washer|scullery|pot[-_ ]?\\s*&?\\s*pan"
 
-  # Brand terms searched across (url + anchor_text + page_text)
+  # 4) Text patterns across (url + anchor_text + page_text) — backup signals
   line_patterns:
     Rack Conveyor:
-      - "(?i)\\bEST[- ]?(44|66)\\b"
+      - "(?i)\\bEST[-_ ]?(44|66)\\b"
       - "(?i)\\bconveyor\\b"
     Door Type:
-      - "(?i)\\bCMA[- ]?180\\b"         # 180 upright family
+      - "(?i)\\bCMA[-_ ]?180\\b"
       - "(?i)\\bupright\\b|\\bdoor\\s*type\\b"
+      - "(?i)\\bL\\s*Series\\b|\\bAWS(-H)?\\b|\\bHT[-_ ]?(25|34)\\b|\\b5[-_ ]?(CD|AG(-S|-ES)?)\\b"
     Undercounter:
-      - "(?i)\\bUC(50E|65E)\\b"
-      - "(?i)\\bL[- ]?1X\\b"
-      - "(?i)\\bundercounter\\b"
+      - "(?i)\\bUC(50E|65E)\\b|\\bL[-_ ]?1X\\b|\\bundercounter\\b"
     Prep Washer:
-      - "(?i)\\bpot\\s*washer\\b|\\bpot\\s*&\\s*pan\\b|\\bscullery\\b"
+      - "(?i)\\bpot\\s*washer\\b|\\bscullery\\b|\\bpot\\s*&?\\s*pan\\b"
 
-
+  # 5) Tile selectors help catch “Product tile added: …” on category pages
   tile_selectors:
     - ".product a"
     - "h3.entry-title a"
+
 
 
 Douglas:
