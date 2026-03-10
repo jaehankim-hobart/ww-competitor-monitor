@@ -181,7 +181,6 @@ CMA:
   page_allow:
     - "/products/"            # product/category
     - "/product/"             # individual product pages
-    - "/wp-content/uploads/"  # follow hard-linked PDFs from any page
 
   # 3) Strong URL hints → instant classification when the PDF path matches
   pdf_path_line_hints:
