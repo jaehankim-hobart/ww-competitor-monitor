@@ -70,7 +70,8 @@ DEFAULT_LINES = [
 COMPETITOR_COLS = COMP_CONF.get("competitors", DEFAULT_COMPETITORS)
 LINES_ORDER     = COMP_CONF.get("lines", DEFAULT_LINES)
 if "Other" not in LINES_ORDER:
-    LINES_ORDER = LINES_ORDER + ["Other"]  # ← keep 'Other' row to prevent KeyError
+    LINES_ORDER = LINES_ORDER + ["Other"]  # prevent KeyError on uncategorized
+
 DOOR, UNDER, PREP, RACK, FLIGHT = (
     "Door Type", "Undercounter", "Prep Washer", "Rack Conveyor", "Flight Type"
 )
@@ -127,7 +128,7 @@ def ensure_archive_tree():
 def a(href: str, label: str) -> str:
     href = href or "#"
     label = label or (href if href != "#" else "link")
-    return f'{href}{label}</a>'
+    return f'<a href="{href}">{label}</a>'
 
 def display_url_label(href: str, max_len: int = 60) -> str:
     try:
@@ -168,18 +169,18 @@ def beautify_filename(url_or_name: str) -> str:
 def extract_embedded_links(html: str, base: str) -> set[str]:
     """Find product links present in onclick/data attributes/JS helpers."""
     out = set()
-    # onclick="location.href='...'" / "window.location='...'"
-    for m in re.finditer(r'onclick\s*=\s*"(?:location\.href|window\.location)\s*=\s*[^\'"]+[\'"]', html, re.I):
+    # onclick="location.href='...'" or onclick="window.location='...'"
+    for m in re.finditer(r'onclick\s*=\s*"(?:location\.href|window\.location)\s*=\s*([^\']+)[\'"]', html, re.I):
         out.add(urljoin(base, m.group(1)))
-    for m in re.finditer(r"onclick\s*=\s*'(?:location\.href|window\.location)\s*=\s*[^\"']+[\"']", html, re.I):
+    for m in re.finditer(r"onclick\s*=\s*'(?:location\.href|window\.location)\s*=\s*([^\"]+)[\"']", html, re.I):
         out.add(urljoin(base, m.group(1)))
     # data-url="/path/to/product/"
     for m in re.finditer(r'data-url\s*=\s*"([^"]+)"', html, re.I):
         out.add(urljoin(base, m.group(1)))
     for m in re.finditer(r"data-url\s*=\s*'([^']+)'", html, re.I):
         out.add(urljoin(base, m.group(1)))
-    # goToProduct('/path/...'), openProduct("...")
-    for m in re.finditer(r'(?:goToProduct|openProduct)\s*\(\s*[^\'"]+[\'"]\s*\)', html, re.I):
+    # JS helpers like goToProduct('/path/...') or openProduct("...")
+    for m in re.finditer(r'(?:goToProduct|openProduct)\s*\(\s*([^\']+)[\'"]\s*\)', html, re.I):
         out.add(urljoin(base, m.group(1)))
     return out
 
@@ -382,7 +383,7 @@ DEFAULT_UA = (
 )
 
 session = requests.Session()
-# Strong, browser-like default headers (fix for Cloudflare/WP)
+# Strong, browser-like default headers (helps CF/WP)
 session.headers.update({
     "User-Agent": os.getenv("UA_OVERRIDE", DEFAULT_UA),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
@@ -406,11 +407,62 @@ def prime_host_session(url: str):
     except Exception:
         pass
 
+# --- OPTIONAL Cloudflare-aware fallback (CMA only, when enabled) ---
+try:
+    import cloudscraper
+    _SCRAPER_AVAILABLE = True
+except Exception:
+    _SCRAPER_AVAILABLE = False
+
+def _is_cma(url: str) -> bool:
+    try:
+        return urlparse(url).netloc.endswith("cmadishmachines.com")
+    except Exception:
+        return False
+
+def _should_use_scraper(url: str) -> bool:
+    # gate on env + host + availability
+    return _SCRAPER_AVAILABLE and os.getenv("USE_CLOUDSCRAPER", "0") == "1" and _is_cma(url)
+
+_scraper = None
+def _get_scraper():
+    """Create (lazy) scraper instance and mirror session headers."""
+    global _scraper
+    if _scraper is None:
+        _scraper = cloudscraper.create_scraper()
+        _scraper.headers.update(session.headers)
+    return _scraper
+
 def safe_request(method, url):
+    """
+    Primary HTTP entry. Uses requests.Session by default.
+    If a 403 occurs on GET/HEAD for CMA and USE_CLOUDSCRAPER=1, retries once via cloudscraper.
+    Carries Referer header when present.
+    """
     try:
         r = session.request(method, url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
         if os.getenv("DEBUG_LOG", "0") == "1" and r is not None and r.status_code >= 400:
             print(f"[HTTP-{method}] {r.status_code} {r.reason} :: {url}")
+        # If 403 and we want the scraper, try it before raising
+        if r is not None and r.status_code == 403 and _should_use_scraper(url) and method in ("GET", "HEAD"):
+            try:
+                sc = _get_scraper()
+                # forward referer if we set one on session
+                headers = {}
+                if "Referer" in session.headers:
+                    headers["Referer"] = session.headers["Referer"]
+                rr = sc.request(method, url, timeout=REQUEST_TIMEOUT, allow_redirects=True, headers=headers or None)
+                if os.getenv("DEBUG_LOG", "0") == "1" and rr is not None and rr.status_code >= 400:
+                    print(f"[HTTP-SCRAPER-{method}] {rr.status_code} {rr.reason} :: {url}")
+                rr.raise_for_status()
+                # optionally feed cookies back to session to help subsequent calls
+                try:
+                    session.cookies.update(rr.cookies)
+                except Exception:
+                    pass
+                return rr
+            except Exception as se:
+                dbg(f"[SCRAPER-{method}] {url} -> {se}")
         r.raise_for_status()
         return r
     except Exception as e:
@@ -553,14 +605,17 @@ _RX_FLIGHT = [
     re.compile(r"\bFlight\s*Type\b", re.I),
     re.compile(r"\bFlight\s*Machine\b", re.I),
 ]
+
 _RX_RACK = [
     re.compile(r"rack\s*conveyor", re.I),
 ]
+
 _RX_DOOR = [
     re.compile(r"\bHood\s*Type\b", re.I),
     re.compile(r"\bDoor\s*Type\b", re.I),
     re.compile(r"\bTall\s*Hood\b", re.I),
 ]
+
 # Improved Undercounter (glass washer variants)
 _RX_UNDER = [
     re.compile(r"\bglass\s*washer(s)?\b", re.I),
@@ -568,6 +623,7 @@ _RX_UNDER = [
     re.compile(r"\bglasswasher(s)?\b", re.I),
     re.compile(r"\bundercounter\b", re.I),
 ]
+
 # Expanded Prep Washer signals
 _RX_PP = [
     re.compile(r"\bprep[\s\-]*washer(s)?\b", re.I),
@@ -576,6 +632,7 @@ _RX_PP = [
     re.compile(r"\bpan[\s\-]*washer(s)?\b", re.I),
     re.compile(r"\butensil(s)?\s*washer(s)?\b", re.I),
 ]
+
 _RX_OTHER = [
     re.compile(r"waste\s*handling", re.I),
     re.compile(r"dehydrator", re.I),
@@ -620,12 +677,15 @@ def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor:
     line, conf = infer_line_global(text)
     if conf >= 0.90:
         return line, conf
+
     # 2) Per-site rules
     rules = _get_rules_for(competitor)
+
     # Strong hints from PDF path
     for line_key, rx in (rules["pdf_path_line_hints"] or {}).items():
         if rx.search(url):
             return line_key, 0.90
+
     # Pattern scores
     scores = {}
     for line_key, patt_list in (rules["line_patterns"] or {}).items():
@@ -635,6 +695,7 @@ def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor:
     if scores:
         best = max(scores, key=scores.get)
         return best, min(0.95, 0.80 + 0.05 * scores[best])
+
     return "Other", 0.5
 
 # -------------------
@@ -1014,12 +1075,9 @@ def compose_email(all_events):
     # Rows
     for line in LINES_ORDER:
         html.append("<tr>")
-        # First column with icon (restore proper <img/>)
+        # First column with icon (kept same rendering approach)
         cid, _ = line_icon_name(line)
-        icon_html = (
-            f'cid:{cid}'
-            if cid else ""
-        )
+        icon_html = f'cid:{cid}' if cid else ""
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
@@ -1044,6 +1102,7 @@ def compose_email(all_events):
         html.append("</tr>")
     html.append("</tbody></table></div>")
     return subject, "\n".join(html)
+
 
 # -------------------
 # Senders (Graph / SMTP)
