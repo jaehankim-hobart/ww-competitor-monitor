@@ -76,7 +76,9 @@ jobs:
           path: |
             output/manifest.csv
             output/manifest.rules.csv
-            output/report_by_product_line.csv
+            output/report_by_product_line.csv          
+            output/all_pdfs.csv
+            output/run_pdf_events.csv
             preview.html
           if-no-files-found: ignore
 
