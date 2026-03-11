@@ -414,15 +414,22 @@ try:
 except Exception:
     _SCRAPER_AVAILABLE = False
 
-def _is_cma(url: str) -> bool:
+
+_SCRAPER_HOSTS = {
+    "cmadishmachines.com", "www.cmadishmachines.com",
+    "championindustries.com", "www.championindustries.com",
+}
+
+def _is_scraper_host(url: str) -> bool:
     try:
-        return urlparse(url).netloc.endswith("cmadishmachines.com")
+        host = urlparse(url).netloc.lower()
+        return any(host == h or host.endswith("." + h) for h in _SCRAPER_HOSTS)
     except Exception:
         return False
 
 def _should_use_scraper(url: str) -> bool:
-    # gate on env + host + availability
-    return _SCRAPER_AVAILABLE and os.getenv("USE_CLOUDSCRAPER", "0") == "1" and _is_cma(url)
+    return _SCRAPER_AVAILABLE and os.getenv("USE_CLOUDSCRAPER", "0") == "1" and _is_scraper_host(url)
+
 
 _scraper = None
 def _get_scraper():
