@@ -3,6 +3,20 @@ name: Bootstrap Archive with Baseline Reports
 
 on:
   workflow_dispatch:
+    inputs:
+      use_cloudscraper:
+        description: "Enable cloudscraper fallback (1=yes, 0=no)"
+        required: false
+        default: "1"
+      debug_log:
+        description: "Enable DEBUG_LOG (1=yes)"
+        required: false
+        default: "1"
+      write_preview:
+        description: "Write preview.html (1=yes)"
+        required: false
+        default: "1"
+
 
 jobs:
   bootstrap:
@@ -18,8 +32,7 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4 lxml pyyaml pandas scikit-learn joblib PyPDF2
-
+          pip install requests beautifulsoup4 lxml pyyaml pandas scikit-learn joblib PyPDF2 cloudscraper
       - name: Run bootstrap crawl and archive
         env:
           BOOTSTRAP_ARCHIVE: "1"
@@ -50,3 +63,14 @@ jobs:
           path: |
             output/manifest.csv
             output/report_by_product_line.csv
+        
+      - name: Run bootstrap crawl and archive      
+        env:
+          BOOTSTRAP_ARCHIVE: "1"
+          ARCHIVE_ALL_PDFS: "1"
+          USE_CLOUDSCRAPER: "${{ github.event.inputs.use_cloudscraper }}"
+          DEBUG_LOG: "${{ github.event.inputs.debug_log }}"
+          WRITE_PREVIEW: "${{ github.event.inputs.write_preview }}"
+        run: |
+          python monitor_warewashing.py
+
