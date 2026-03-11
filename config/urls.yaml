@@ -4,7 +4,7 @@ Champion:
   Undercounter:
     - https://www.championindustries.com/our-products/undercounter-dishwashers/
   Prep Washer:
-    - https://www.championindustries.com/our-products/pot-pan/
+    - https://www.championindustries.com/our-products/pot-pan-rack-washers/
   Rack Conveyor:
     - https://www.championindustries.com/our-products/rack-conveyors/
   Flight Type:
@@ -82,37 +82,47 @@ CMA:
 
 Noble:
   Door Type:
-    - https://www.webstaurantstore.com/4317/single-rack-dishwashers-and-double-rack-dishwashers.html?vendor=Noble-Warewashing
+    - "https://www.webstaurantstore.com/4317/single-rack-dishwashers-and-double-rack-dishwashers.html?vendor=Noble-Warewashing"
   Undercounter:
-    - https://www.webstaurantstore.com/4321/under-counter-dishwashers.html?vendor=Noble-Warewashing
+    - "https://www.webstaurantstore.com/4321/under-counter-dishwashers.html?vendor=Noble-Warewashing"
   Prep Washer:
-    - https://www.webstaurantstore.com/4321/under-counter-dishwashers.html?vendor=Noble-Warewashing
+    - "https://www.webstaurantstore.com/4321/under-counter-dishwashers.html?vendor=Noble-Warewashing"
   Rack Conveyor:
-    - https://www.webstaurantstore.com/4313/conveyor-dishwashers.html?vendor=Noble-Warewashing
+    - "https://www.webstaurantstore.com/4313/conveyor-dishwashers.html?vendor=Noble-Warewashing"
   Flight Type:
     []  # N/A
 
 
 ADS:
   Door Type:
-    - https://www.americandish.com/dish-machines/
+    - https://www.americandish.com/product/upright-dish-machine-af-afc-3d-s/
+    - https://www.americandish.com/product/upright-dish-machine-af-afc-es/
+    - https://www.americandish.com/product/upright-dish-machines-af-afc-3d-s/
+    - https://www.americandish.com/product/upright-dish-machine-afb-bakery/
+    - https://www.americandish.com/product/upright-dish-machine-aws-aws-h/
+    - https://www.americandish.com/product/upright-dish-machine-ht-25/
+    - https://www.americandish.com/product/upright-dish-machine-ht-34/
+    - https://www.americandish.com/product/upright-dish-machines-5-cd/
+    - https://www.americandish.com/product/upright-dish-machine-5-ag-s/
+    - https://www.americandish.com/product/upright-dish-machines-5-ag-es/        
     # (Optionally add direct upright pages if you have them)
 
   Undercounter:
+    - https://www.americandish.com/product/glasswashing-dish-machine-asq-glasswasher/
     - https://www.americandish.com/product/undercounter-dish-machine-etaf-3-etaf-m/
     - https://www.americandish.com/product/undercounter-hub-40/
 
   Rack Conveyor:
     - https://www.americandish.com/product/conveyor-dish-machine-adc-44-conveyor/
+    - https://www.americandish.com/product/conveyor-dish-machine-adc-44/
     - https://www.americandish.com/product/conveyor-dish-machine-adc-66-conveyor/
+    - https://www.americandish.com/product/conveyor-dish-machine-adc-66-tall/
 
   Prep Washer:
-    # If ADS exposes a Pot Washer product URL, add it here when you confirm it on site
-    # - "https://www.americandish.com/product/pot-washer/"
+    []   # Not applicable
 
   Flight Type:
-    # Currently no flight machines visible in ADS catalog—leave empty
-    # (If added later, we’ll update site_rules and seeds accordingly)
+    []   # Not applicable
 
 
 Moyer Diebel:
@@ -121,11 +131,11 @@ Moyer Diebel:
   Undercounter:
     - https://www.moyerdiebel.com/undercounter-dishwashers/
   Prep Washer:
-    []  # Moyer Diebel has no prep washer
+    []   # Not applicable
   Rack Conveyor:
     - https://www.moyerdiebel.com/rack-conveyors/
   Flight Type:
-    []  # Moyer Diebel has no flight line
+    []   # Not applicable
 
 Douglas:
   Door Type:
