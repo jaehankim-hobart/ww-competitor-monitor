@@ -560,7 +560,6 @@ _RX_DOOR = [
     re.compile(r"\bHood\s*Type\b", re.I),
     re.compile(r"\bDoor\s*Type\b", re.I),
     re.compile(r"\bTall\s*Hood\b", re.I),
-    re.compile(r"\b(DH|DL)\s*\d", re.I),
 ]
 # Improved Undercounter (glass washer variants)
 _RX_UNDER = [
