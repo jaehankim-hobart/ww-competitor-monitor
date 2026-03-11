@@ -1287,6 +1287,43 @@ def build_reports_and_get_attachments() -> list[str]:
     pivot_csv = os.path.join(str(CLASS_OUT_DIR), "report_by_product_line.csv")
     return [manifest_csv, pivot_csv]
 
+
+# -------------------
+# Exports for audit (PDF inventory and today's PDF events)
+# -------------------
+def export_pdf_lists(cur):
+    os.makedirs("output", exist_ok=True)
+
+    # A. All known PDFs (from resources)
+    cur.execute("""
+      SELECT competitor, line, kind, url, last_modified, etag, hash, last_seen
+      FROM resources
+      WHERE kind='pdf'
+      ORDER BY competitor, line, url
+    """)
+    rows = cur.fetchall()
+    with open("output/all_pdfs.csv", "w", encoding="utf-8") as f:
+        f.write("competitor,line,kind,url,last_modified,etag,hash,last_seen\n")
+        for r in rows:
+            # simple CSV escaping (replace commas in values)
+            f.write(",".join('' if (x is None) else str(x).replace(',', ' ') for x in r) + "\n")
+
+    # B. PDFs that fired events in this run (added/updated)
+    # We select events for known doc kinds; feel free to broaden as needed.
+    cur.execute("""
+      SELECT ts,competitor,line,what AS kind,change,url,archived_path,archived_url,new_archived_url
+      FROM events
+      WHERE what IN ('Spec Sheet','Data Sheet','Brochure')
+        AND ts >= (SELECT COALESCE(MAX(ts), '') FROM events)  -- last inserted batch in this session
+      ORDER BY ts DESC, competitor, line
+    """)
+    evs = cur.fetchall()
+    with open("output/run_pdf_events.csv", "w", encoding="utf-8") as f:
+        f.write("ts,competitor,line,kind,change,url,archived_path,archived_url,new_archived_url\n")
+        for r in evs:
+            f.write(",".join('' if (x is None) else str(x).replace(',', ' ') for x in r) + "\n")
+
+
 # -------------------
 # Main
 # -------------------
@@ -1340,6 +1377,8 @@ def main():
             e.get("old_archived_url"),
         ))
     con.commit()
+    # Export audit CSVs for artifacts
+    export_pdf_lists(cur)
 
     subject, body = compose_email(all_events)
 
