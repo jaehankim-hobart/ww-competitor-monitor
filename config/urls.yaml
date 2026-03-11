@@ -95,16 +95,16 @@ Noble:
 
 ADS:
   Door Type:
-    - "https://www.americandish.com/dish-machines/"              # index (captures Upright pages)
+    - https://www.americandish.com/dish-machines/
     # (Optionally add direct upright pages if you have them)
 
   Undercounter:
-    - "https://www.americandish.com/product/undercounter-dish-machine-etaf-3-etaf-m/"
-    - "https://www.americandish.com/product/undercounter-hub-40/"
+    - https://www.americandish.com/product/undercounter-dish-machine-etaf-3-etaf-m/
+    - https://www.americandish.com/product/undercounter-hub-40/
 
   Rack Conveyor:
-    - "https://www.americandish.com/product/conveyor-dish-machine-adc-44-conveyor/"
-    - "https://www.americandish.com/product/conveyor-dish-machine-adc-66-conveyor/"
+    - https://www.americandish.com/product/conveyor-dish-machine-adc-44-conveyor/
+    - https://www.americandish.com/product/conveyor-dish-machine-adc-66-conveyor/
 
   Prep Washer:
     # If ADS exposes a Pot Washer product URL, add it here when you confirm it on site
