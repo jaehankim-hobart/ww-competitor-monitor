@@ -38,43 +38,43 @@ Meiko:
 
 CMA:
   Door Type:
-    - "https://cmadishmachines.com/products/"            # product index (has Upright families)  # <- high-level index
-    - "https://cmadishmachines.com/product/model-180-straight/"    # door/hood example
-    - "https://cmadishmachines.com/product/model-180-tall-straight/"
-    - "https://cmadishmachines.com/product/model-180-corner/"
-    - "https://cmadishmachines.com/product/model-180-tall-corner/"
-    - "https://cmadishmachines.com/product/model-cma-180-vl-fl/"   # ventless upright example
+    - https://cmadishmachines.com/products/
+    - https://cmadishmachines.com/product/model-180-straight/
+    - https://cmadishmachines.com/product/model-180-tall-straight/
+    - https://cmadishmachines.com/product/model-180-corner/
+    - https://cmadishmachines.com/product/model-180-tall-corner/
+    - https://cmadishmachines.com/product/model-cma-180-vl-fl/
   Undercounter:
-    - "https://cmadishmachines.com/cma-product-category/all-glass-washers/"
-    - "https://cmadishmachines.com/product/model-h-1x/"
-    - "https://cmadishmachines.com/product/model-181-vl-glass-washer/"
-    - "https://cmadishmachines.com/product/model-181gw/"
-    - "https://cmadishmachines.com/product/model-gl-x/"
-    - "https://cmadishmachines.com/product/model-gl-c/"
-    - "https://cmadishmachines.com/product/model-l-1xe/"
-    - "https://cmadishmachines.com/product/model-gw-100/"
-    - "https://cmadishmachines.com/product/model-l-1c/"
-    - "https://cmadishmachines.com/cma-product-category/under-counter-low-temperature-dishwashers/"
-    - "https://cmadishmachines.com/product/model-l-1x/"            # undercounter low-temp
-    - "https://cmadishmachines.com/product/model-l-1x16/"
-    - "https://cmadishmachines.com/product/model-l-1xe/"
-    - "https://cmadishmachines.com/product/model-l-1c/"
-    - "https://cmadishmachines.com/cma-product-category/under-counter-high-temperature-dishwashers/"
-    - "https://cmadishmachines.com/product/180uc-3/"
-    - "https://cmadishmachines.com/product/uc65e-m3/"
-    - "https://cmadishmachines.com/product/model-h-1x/"
-    - "https://cmadishmachines.com/product/model-180uc-2/"    
-    - "https://cmadishmachines.com/product/model-uc50e/"           # undercounter high-temp
-    - "https://cmadishmachines.com/product/model-uc65e-m2/"        # undercounter high-temp
+    - https://cmadishmachines.com/cma-product-category/all-glass-washers/
+    - https://cmadishmachines.com/product/model-h-1x/
+    - https://cmadishmachines.com/product/model-181-vl-glass-washer/
+    - https://cmadishmachines.com/product/model-181gw/
+    - https://cmadishmachines.com/product/model-gl-x/
+    - https://cmadishmachines.com/product/model-gl-c/
+    - https://cmadishmachines.com/product/model-l-1xe/
+    - https://cmadishmachines.com/product/model-gw-100/
+    - https://cmadishmachines.com/product/model-l-1c/
+    - https://cmadishmachines.com/cma-product-category/under-counter-low-temperature-dishwashers/
+    - https://cmadishmachines.com/product/model-l-1x/
+    - https://cmadishmachines.com/product/model-l-1x16/
+    - https://cmadishmachines.com/product/model-l-1xe/
+    - https://cmadishmachines.com/product/model-l-1c/
+    - https://cmadishmachines.com/cma-product-category/under-counter-high-temperature-dishwashers/
+    - https://cmadishmachines.com/product/180uc-3/
+    - https://cmadishmachines.com/product/uc65e-m3/
+    - https://cmadishmachines.com/product/model-h-1x/
+    - https://cmadishmachines.com/product/model-180uc-2/    
+    - https://cmadishmachines.com/product/model-uc50e/
+    - https://cmadishmachines.com/product/model-uc65e-m2/  
   Rack Conveyor:
-    - "https://cmadishmachines.com/cma-product-category/conveyor-dishwashers/"
-    - "https://cmadishmachines.com/product/model-est-44/"          # conveyor 44
-    - "https://cmadishmachines.com/product/model-est-66/"          # conveyor 66
-    - "https://cmadishmachines.com/product/model-est-44-tall/"     # conveyor 44 tall
-    - "https://cmadishmachines.com/product/model-est-66-tall/"     # conveyor 66 tall
+    - https://cmadishmachines.com/cma-product-category/conveyor-dishwashers/"
+    - https://cmadishmachines.com/product/model-est-44/
+    - https://cmadishmachines.com/product/model-est-66/
+    - https://cmadishmachines.com/product/model-est-44-tall/
+    - https://cmadishmachines.com/product/model-est-66-tall/
   Prep Washer:
-    - "https://cmadishmachines.com/cma-product-category/pot-washer/"
-    - "https://cmadishmachines.com/product/pt-15-pan-washer/"
+    - https://cmadishmachines.com/cma-product-category/pot-washer/
+    - https://cmadishmachines.com/product/pt-15-pan-washer/
     
   Flight Type:
     # leave empty unless CMA publishes a Flight series
