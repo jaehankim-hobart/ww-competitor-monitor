@@ -22,6 +22,61 @@ from urllib.parse import urljoin, urlparse, unquote
 import requests
 from bs4 import BeautifulSoup
 
+
+import json
+
+def extract_dcatalog_pdf_link(html: str, base_url: str) -> set[str]:
+    """
+    Try to pull a direct PDF download URL from DCatalog viewer pages.
+    Returns a set of absolute URLs (often just one).
+    """
+    out = set()
+    low = (html or "").lower()
+
+    # 1) Look for an explicit "Download PDF" anchor
+    # Common patterns: ...pdfDownload PDF</a>
+    for m in re.finditer(r'<a[^>]+href="([^"]+\.pdf[^"]*)"[^>]*>(?:[^<]*download[^<]*pdf[^<]*)</a>',
+                         html, re.I):
+        href = urljoin(base_url, m.group(1))
+        out.add(href)
+
+    # 2) Look for a data-config / viewer JSON that contains a PDF URL
+    # Often there's an inline script with JSON that includes "download" or ".pdf"
+    # This is heuristic but safe (we don't fetch external assets here).
+    for m in re.finditer(r'<script[^>]*>\s*({.*?})\s*</script>', html, re.S | re.I):
+        block = m.group(1)
+        if (".pdf" not in block.lower()) and ("download" not in block.lower()):
+            continue
+        try:
+            jd = json.loads(block)
+            # Walk the JSON shallowly to find any string ending in .pdf
+            def walk(v):
+                if isinstance(v, dict):
+                    for vv in v.values(): 
+                        yield from walk(vv)
+                elif isinstance(v, list):
+                    for vv in v: 
+                        yield from walk(vv)
+                elif isinstance(v, str):
+                    yield v
+            for s in walk(jd):
+                if isinstance(s, str) and s.lower().endswith(".pdf"):
+                    out.add(urljoin(base_url, s))
+        except Exception:
+            pass
+
+    # 3) Generic anchor sniff (some templates name the link 'download' without .pdf visible)
+    for m in re.finditer(r'<a[^>]+href="([^"]+)"[^>]*>(?:[^<]*download[^<]*pdf[^<]*)</a>',
+                         html, re.I):
+        href = urljoin(base_url, m.group(1))
+        out.add(href)
+
+    return out
+
+
+
+
+
 # -------------------
 # Optional: post-crawl classifier & reporting
 # -------------------
@@ -751,6 +806,17 @@ def crawl_seed(cur, competitor, line, url):
     embedded = extract_embedded_links(html, url)
     if embedded:
         links.extend((e, "") for e in sorted(embedded))
+
+    
+    # DCatalog viewer special-case: try to surface the real PDF download link(s)
+    try:
+        if urlparse(url).netloc.lower().endswith("dcatalog.com"):
+            dlinks = extract_dcatalog_pdf_link(html, url)
+            if dlinks:
+                links.extend((dl, "Download PDF") for dl in sorted(dlinks))
+    except Exception as _ex:
+        dbg(f"[DCATALOG] PDF detect failed on {url}: {_ex}")
+
     
     # If we saw suspiciously few links, try one refetch with cloudscraper (Champion/CMA)
     if len(links) < 5 and _is_scraper_host(url) and os.getenv("USE_CLOUDSCRAPER", "0") == "1":
