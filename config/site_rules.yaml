@@ -1,375 +1,175 @@
-Champion:
-  # While stabilizing, you can leave this on. Once you're happy with coverage,
-  # set to false to only archive recognized doc types (spec/brochure/datasheet) from code.
-  pdf_accept_all: true
 
-  # Only crawl within first-party host
+Champion:
+  # Restrict to true product PDFs only
+  pdf_accept_all: false
+
   host_allow:
     - "^www\\.championindustries\\.com$"
 
-  # Skip non-product and heavy assets paths
+  # Block known junk / slow directories
   path_block:
-    - "^/(?:blog|news|events|press|privacy|terms|warranty|service|support|contact|search|sitemap)(/|$)"
+    - "^/(blog|news|events|press|privacy|terms|warranty|service|support|contact|search|sitemap)(/|$)"
     - "^/wp-content/"
-    - "\\.(?:jpg|jpeg|png|gif|svg|webp)(?:\\?.*)?$"
+    - "\\.(jpg|jpeg|png|gif|svg|webp)(\\?.*)?$"
+    - "^/content/equipment-start-up-forms/"
 
-  # Product/category pages to follow (same-host)
+  # Product pages only → dramatically reduces crawl
   page_allow:
-    # Category landers (these are your seeds)
-    - "^/our-products/(?:door-type|undercounter-dishwashers|pot-pan|rack-conveyors|flight-machines)/?$"
-    # Product-level slugs
-    - "^/[A-Za-z0-9][A-Za-z0-9-]{4,}/?$"
-    # 2–3 segment product paths
-    - "^/[A-Za-z0-9][A-Za-z0-9-]{2,}(?:/[A-Za-z0-9-]{2,}){1,2}/?$"
+    - "^/our-products/(door-type|undercounter-dishwashers|pot-pan.*|rack-conveyors|flight-machines)/?$"
+    - "^/content/(spec-sheets|brochures|data-sheets|manuals|ops|operations|cleaning)/"
+    - "^/product/[A-Za-z0-9][A-Za-z0-9-]{2,}/?$"
 
-  # Restrict Champion PDFs to first-party
+  # Champion PDFs only from first-party domain
   pdf_host_allow:
     - "^www\\.championindustries\\.com$"
 
-  # ---------- Strong URL/path folder hints for classification ----------
-  # These fire with high confidence (0.90) as soon as the PDF URL contains the hint.
+  # PDF → product line hints
   pdf_path_line_hints:
-    Door Type: "(?i)/our-products/door-type/"
-    Undercounter: "(?i)/our-products/undercounter-dishwashers/"
-    Prep Washer: "(?i)/our-products/pot-pan/"
-    Rack Conveyor: "(?i)/our-products/rack-conveyors/"
-    Flight Type: "(?i)/our-products/flight-machines/"
+    Door Type: "(?i)/door-type/"
+    Undercounter: "(?i)/undercounter-dishwashers/"
+    Prep Washer: "(?i)/pot-pan/"
+    Rack Conveyor: "(?i)/rack-conveyors/"
+    Flight Type: "(?i)/flight-machines/"
 
-  # ---------- Text patterns searched across (url + anchor_text + page_text) ----------
-  # Use site-native terms to reinforce global logic and avoid accidental matches.
-  line_patterns:
-    Flight Type:
-      # Your override: EUCC/EUCCW families belong to Flight
-      - "(?i)\\bEUCCW?\\b"
-      - "(?i)\\bPRO\\s*Flight\\b"
-      - "(?i)\\bE\\s*Series\\s*Flight\\b"
-      - "(?i)\\bFlight\\s*Machine\\b"
-      - "(?i)\\bFlight\\s*Type\\b"
-
-    Rack Conveyor:
-      # Champion PRO conveyor families — allow trailing variants (FF/HR/VHR/HD/Steam)
-      - "(?i)\\b(44|54|64|66|76|80|86|90)\\s*PRO\\b.*"
-      # Loader/Unloader docs
-      - "(?i)\\bPRO\\s*90B\\b"
-      # Weaker fallback (textual)
-      - "(?i)rack\\s*conveyor"
-
-    Door Type:
-      - "(?i)\\b(DH|DL)\\s*\\d"
-      - "(?i)\\bHood\\s*Type\\b"
-      - "(?i)\\bTall\\s*Hood\\b"
-      - "(?i)\\bDoor\\s*Type\\b"
-
-    Undercounter:
-      # Glasswashers are considered undercounter for reporting
-      - "(?i)\\bGlasswasher(s)?\\b"
-      - "(?i)\\bCG[0-9 ]*\\b"
-      - "(?i)\\bU(H|L|HM|HB)\\s*\\d{2,4}[A-Z]?\\b"
-      - "(?i)\\bUCC(W)?\\b"
-      - "(?i)\\bUndercounter\\b"
-
-    Prep Washer:
-      - "(?i)\\bPP\\b"
-      - "(?i)\\bPP\\s*\\d+\\b"
-      - "(?i)\\bPot\\s*&?\\s*Pan\\b"
-      - "(?i)\\bP524\\b"
-
+  # Refined tile selectors
   tile_selectors:
     - ".product-card a"
     - ".cards .card a"
 
-
+---
 Jackson:
-  # Allow PDFs from the main site and its media host(s) (adjust if they use a CDN)
   pdf_host_allow:
     - "jacksonwws.com"
     - "www.jacksonwws.com"
 
-  # Pages we consider as product content (keeps crawl focused)
+  # Keep to key product/category pages only
   page_allow:
-    - "/products/"
+    - "^/products/"
+    - "^/wp-content/uploads/"     # for direct PDF pages
+    - "^/categories/(high-temp|low-temp|undercounters|conveyors-good-better-best)/"
 
-  # ---------- Strong path hints for classification (high confidence) ----------
-  # If a PDF URL or product path contains these slugs, we classify immediately.
   pdf_path_line_hints:
-    Rack Conveyor: "(?i)rackstar|rack-star|/rack[-_]?conveyor"
-    Flight Type: "(?i)flightstar|flight-star|/flight(?!\\s*recovery)"
-    Door Type: "(?i)/door[-_ ]?type|/corner[-_ ]?and[-_ ]?door[-_ ]?type"
-    Undercounter: "(?i)/undercounter"
-
-  # ---------- Text patterns searched across (url + anchor_text + page_text) ----------
-  # Brand-specific vocab that Jackson uses in names and marketing copy.
-  line_patterns:
-    Rack Conveyor:
-      - "(?i)\\bRackStar\\b"
-      - "(?i)\\bRS\\s*(44|66)\\b"         # model shorthand (if used)
-      - "(?i)\\brack\\s*conveyor(s)?\\b"  # weaker/backup signal
-
-    Flight Type:
-      - "(?i)\\bFlightStar\\b"
-      - "(?i)\\bflight\\s*type\\b"
-
-    Door Type:
-      - "(?i)\\bDyna\\s*Star\\b"
-      - "(?i)\\bTemp\\s*Star\\b"
-      - "(?i)\\bNXP\\b"
-      - "(?i)\\bConserver\\b"
-      - "(?i)\\bdoor\\s*type\\b"          # backup generic
-
-    Undercounter:
-      - "(?i)\\bDelta\\b"
-      - "(?i)\\bDish\\s*Star\\b"
-      - "(?i)\\bundercounter\\b"          # backup generic
+    Rack Conveyor: "(?i)rackstar|rack[-_]?conveyor"
+    Flight Type: "(?i)flightstar|flight-type"
+    Door Type: "(?i)door[-_ ]?type"
+    Undercounter: "(?i)undercounter"
 
   tile_selectors:
     - ".product-card a"
-    - ".products-grid .card-title a"
 
-
-ADS:
-  # ADS = American Dish Service (americandish.com)
-  # Allow first-party hosts (add CDN if you see PDFs under a separate domain)
-  pdf_host_allow:
-    - "americandish.com"
-    - "www.americandish.com"
-
-  # Keep crawl focused on product content
-  page_allow:
-    - "/dish-machines/"           # product index & category pages
-    - "/product/"                 # individual product pages
-
-  # ---------- Strong URL/path hints (high confidence classification) ----------
-  pdf_path_line_hints:
-    Rack Conveyor: "(?i)/conveyor|\\bADC-(44|66)\\b"
-    Undercounter: "(?i)undercounter|\\bET[- ]?AF\\b|\\bHUB[- ]?40\\b"
-    Door Type: "(?i)upright|/door|\\bAF\\b|\\bAFC\\b|\\bL[- ]?Series\\b|\\bAWS\\b|\\bHT[- ]?(25|34)\\b|\\b5[- ]?(CD|AG)\\b"
-    Prep Washer: "(?i)pot[- ]?washer"   # ADS “Pot Washer Machine” -> your Prep Washer
-
-  # ---------- Text patterns across (url + anchor_text + page_text) ----------
-  line_patterns:
-    Rack Conveyor:
-      - "(?i)\\bADC[- ]?(44|66)\\b"           # conveyor models (ADC-44 / ADC-66)
-      - "(?i)\\bconveyor\\b"
-    Undercounter:
-      - "(?i)\\bET[- ]?AF\\b"                 # ET-AF undercounter family
-      - "(?i)\\bHUB[- ]?40\\b"                # HUB-40 undercounter
-      - "(?i)\\bundercounter\\b"
-    Door Type:
-      - "(?i)\\bAF\\b|\\bAFC\\b"              # AF/AFC series (upright/door type)
-      - "(?i)\\bL\\s*Series\\b"               # L Series
-      - "(?i)\\bAWS(-H)?\\b"                  # AWS / AWS-H
-      - "(?i)\\bHT[- ]?(25|34)\\b"            # HT-25 / HT-34
-      - "(?i)\\b5[- ]?CD\\b|\\b5[- ]?AG(-S|-ES)?\\b"   # 5-CD, 5-AG(-S/-ES)
-      - "(?i)\\bupright\\b|\\bdoor\\s*type\\b"        # safety net
-    Prep Washer:
-      - "(?i)\\bpot\\s*washer\\b"             # ADS calls it Pot Washer
-
-
-  tile_selectors:
-    - ".product__title a"
-    - ".products a"
-
-
-
+---
 CMA:
-  # 1) Allow first‑party host where PDFs live
   pdf_host_allow:
     - "cmadishmachines.com"
     - "www.cmadishmachines.com"
 
-  # 2) Focus product discovery on product pages + allow follow of direct PDF links
+  # Avoid crawling every WP blog/permalink page
+  path_block:
+    - "^/wp-json/"
+    - "^/wp-content/uploads/(20..|19..)/"  # allow direct PDFs but not HTML wrappers
+
   page_allow:
-    - "/products/"            # product/category
-    - "/product/"             # individual product pages
+    - "^/products/"
+    - "^/product/"
 
-  # 3) Strong URL hints → instant classification when the PDF path matches
   pdf_path_line_hints:
-    Rack Conveyor: "(?i)/product/model-est-(44|66)(?:-|/)|\\bEST[-_ ]?(44|66)\\b"
-    Door Type: "(?i)/upright|/product/model-180|\\bCMA[-_ ]?180\\b|\\bdoor[-_ ]?type\\b"
-    Undercounter: "(?i)/undercounter|/product/model-uc(50e|65e)|\\bUC(50E|65E)\\b|\\bL[-_ ]?1X\\b"
-    Prep Washer: "(?i)pot[-_ ]?washer|scullery|pot[-_ ]?\\s*&?\\s*pan"
+    Rack Conveyor: "(?i)est[-_]?(44|66)"
+    Door Type: "(?i)180"
+    Undercounter: "(?i)uc(50e|65e)"
+    Prep Washer: "(?i)pot[-_ ]?washer|scullery"
 
-  # 4) Text patterns across (url + anchor_text + page_text) — backup signals
-  line_patterns:
-    Rack Conveyor:
-      - "(?i)\\bEST[-_ ]?(44|66)\\b"
-      - "(?i)\\bconveyor\\b"
-    Door Type:
-      - "(?i)\\bCMA[-_ ]?180\\b"
-      - "(?i)\\bupright\\b|\\bdoor\\s*type\\b"
-      - "(?i)\\bL\\s*Series\\b|\\bAWS(-H)?\\b|\\bHT[-_ ]?(25|34)\\b|\\b5[-_ ]?(CD|AG(-S|-ES)?)\\b"
-    Undercounter:
-      - "(?i)\\bUC(50E|65E)\\b|\\bL[-_ ]?1X\\b|\\bundercounter\\b"
-    Prep Washer:
-      - "(?i)\\bpot\\s*washer\\b|\\bscullery\\b|\\bpot\\s*&?\\s*pan\\b"
-
-  # 5) Tile selectors help catch “Product tile added: …” on category pages
   tile_selectors:
     - ".product a"
     - "h3.entry-title a"
 
-
-
-Douglas:
-  # First-party host(s) for Douglas Manufacturing
+---
+ADS:
   pdf_host_allow:
-    - "dougmac.com"
-    - "www.dougmac.com"
+    - "americandish.com"
+    - "www.americandish.com"
 
-  # (Optional) keep product discovery focused
   page_allow:
-    - "/product"
-    - "/wp-content/uploads"
+    - "^/product/"
+    - "^/dish-machines/"
 
-  # High-confidence hint: any Douglas PDF => Prep Washer
   pdf_path_line_hints:
-    Prep Washer: "(?s).*"
-
-  # Safety net for HTML/text classification as well
-  line_patterns:
-    Prep Washer:
-      - "(?s).+"   # match anything so HTML pages also land in Prep Washer
-
-
-
-Moyer Diebel:
-  # First-party hosts
-  pdf_host_allow:
-    - "moyerdiebel.com"
-    - "www.moyerdiebel.com"
-
-  # Keep crawl focused on product pages and support docs
-  page_allow:
-    - "/product/"
-    - "/undercounter-dishwashers/"
-    - "/rack-conveyors/"
-    - "/customer-support/"
-    - "/product-catalog/"
-    - "/spec-sheet-library/"
-
-  # ---------- High-confidence URL/path hints ----------
-  # These fire at ~0.90 confidence whenever the PDF URL or page path contains the hints.
-  pdf_path_line_hints:
-    Rack Conveyor: "(?i)/rack-conveyors/|\\bMD(44|66)[ -]?Plus\\b|\\bMC(44|66)[ -]?Plus\\b"
-    Door Type: "(?i)/product/MDHHD|/product/MD2000|/product/MD2000LT|/product/MDHHD-VL|/door|/hood"
-    Undercounter: "(?i)/undercounter-dishwashers/|\\b(201LT|201HT|383HT|601HRG|601HTG|601LTG)\\b"
-    # Glasswashers are reported as Undercounter in your taxonomy
-    # (SW400/600, DF/DF Revolution appear under "Glass Washers" in their catalog)
-    # We treat any "glass" path as Undercounter:
-    Undercounter (Glass): "(?i)/glass|SW(400|600)|\\bDF\\b|DF\\s*Revolution"
-
-  # ---------- Text patterns across (url + anchor_text + page_text) ----------
-  line_patterns:
-    Rack Conveyor:
-      - "(?i)\\bMD(44|66)[ -]?Plus\\b"    # MD44 Plus / MD66 Plus rack conveyor
-      - "(?i)\\bMC(44|66)[ -]?Plus\\b"    # MC44 Plus / MC66 Plus (naming in spec library)
-      - "(?i)\\brack\\s*conveyor\\b"
-    Door Type:
-      - "(?i)\\bMDHHD(-VL)?\\b"           # MDHHD / MDHHD-VL
-      - "(?i)\\bMD2000(LT)?\\b"           # MD2000 / MD2000LT
-      - "(?i)\\bdoor\\s*type\\b|\\bhood\\s*type\\b"
-   
-    Undercounter:
-      # existing undercounter families
-      - "(?i)\\b201(LT|HT)\\b"
-      - "(?i)\\b383HT\\b"
-      - "(?i)\\b601(HRG|HTG|LTG)\\b"
-      - "(?i)\\bundercounter\\b"
-      # map glasswashers → Undercounter (category exists on site; models appear under undercounter/glass)
-      - "(?i)\\bglasswasher(s)?\\b"
-      - "(?i)\\bglass\\s*washing\\s*machine(s)?\\b"        # <-- NEW explicit phrase
-      - "(?i)\\bglasswashing\\s*machine(s)?\\b"            # <-- NEW explicit phrase (no space)
-      - "(?i)\\bglass\\s*washer(s)?\\b"                    # common variant
-      - "(?i)\\bSW(400|600)\\b|\\bDF(\\s*Revolution)?\\b"  # model lines called out in catalogs/specs
+    Rack Conveyor: "(?i)ADC-(44|66)"
+    Undercounter: "(?i)ET-AF|HUB-40"
+    Door Type: "(?i)AF|AFC|HT-25|HT-34|L-series|5-CD|5-AG"
+    Prep Washer: "(?i)pot[-_ ]?washer"
 
   tile_selectors:
-    - ".product a"
-    - ".grid .card a"
+    - ".product__title a"
 
-  # (Optional) If you later find a distinct Pot & Pan product page for Moyer Diebel,
-  # add a Prep Washer hint here:
-  # pdf_path_line_hints:
-  #   Prep Washer: "(?i)pot[ -]?washer|pot\\s*&\\s*pan"
-
-
-LVO:
-  # Restrict to first-party host
-  pdf_host_allow:
-    - "lvomfg.com"
-    - "www.lvomfg.com"
-
-  # Product pages to follow
-  page_allow:
-    - "/site/products/"
-    - "/site/product/"
-    - "/site/product-category/"
-
-  # ---------- Tile selectors (cards on category pages) ----------
-  # LVO uses WordPress + product grids. These selectors grab cards/titles on category & product index pages.
-  tile_selectors:
-    - ".products .product a"            # WooCommerce-style grid anchor
-    - ".product a"                      # fallback: any product card anchor
-    - "h2.woocommerce-loop-product__title a"
-
-  # ---------- High-confidence URL/path hints ----------
-  # We map common model families and URL slugs to lines (kept flexible).
-  pdf_path_line_hints:
-    Prep Washer: "(?i)/product/(fl|pt|pl)\\d+|/product-category/washers/pan-washers"
-    Rack Conveyor: "(?i)/product-category/washers/rack-washers"
-
-  # ---------- Text patterns across (url + anchor_text + page_text) ----------
-  line_patterns:
-    Prep Washer:
-      - "(?i)\\bFL\\d+\\b"              # FL10/14/25/36 ...
-      - "(?i)\\bPT\\d+\\b"              # PT10/14 ...
-      - "(?i)\\bpan\\s*&?\\s*rack\\s*washer\\b|\\bpan\\s*washer\\b"
-    Rack Conveyor:
-      - "(?i)\\brack\\s*washer\\b|\\brack\\s*washers\\b"
-
-
+---
 Meiko:
-  # First-party domains (regional sites sometimes vary; add more if needed)
   pdf_host_allow:
     - "meiko.com"
     - "www.meiko.com"
 
-  # Keep crawl focused on product families
+  # restrict pages to only products & downloads
   page_allow:
-    - "/en-us/products/"
-    - "/en/products/"
-    - "/en-it/products/"
-    - "/en-us/knowledge-base/downloads"
-    - "/en/downloads-media/downloads"
-    - "/en-ae/downloads-media/downloads"
+    - "^/en-us/products/"
+    - "^/en-us/knowledge-base/downloads"
+    - "^/en/downloads-media/downloads"
 
-  # ---------- Tile selectors ----------
-  # Meiko product family pages commonly use cards linking into model/detail pages.
   tile_selectors:
     - ".m-teaser a"
-    - ".teaser a"
     - ".card a"
+
+  pdf_path_line_hints:
+    Undercounter: "(?i)undercounter.*(m-iclean|upster)"
+    Door Type: "(?i)hood-type|door-type"
+    Rack Conveyor: "(?i)rack.*(ka|upster-k)"
+    Flight Type: "(?i)flight-type|m-iq-flight"
+    Prep Washer: "(?i)(utensil|pot|pan).*washer"
+
+---
+Moyer Diebel:
+  pdf_host_allow:
+    - "moyerdiebel.com"
+    - "www.moyerdiebel.com"
+
+  page_allow:
+    - "^/product/"
+    - "^/undercounter-dishwashers/"
+    - "^/rack-conveyors/"
+    - "^/spec-sheet-library/"
+
+  tile_selectors:
     - ".product a"
 
-  # ---------- High-confidence URL/path hints ----------
   pdf_path_line_hints:
-    Undercounter: "(?i)/undercounter.*(m-iclean|upster)\\w*|/undercounter-dishwashers-and-glasswashers"
-    Door Type: "(?i)/(hood|door)-type|m-iclean-h"
-    Rack Conveyor: "(?i)/rack.*(ka|upster-k)"
-    Flight Type: "(?i)/flight-type|m-iq-flight"
-    Prep Washer: "(?i)/(utensil|pot|pan).*washer|m-iclean-pf"
+    Rack Conveyor: "(?i)MD(44|66)"
+    Door Type: "(?i)MDHHD|MD2000"
+    Undercounter: "(?i)201(LT|HT)|383HT|601(HRG|HTG|LTG)|glass"
 
-  # ---------- Text patterns across (url + anchor_text + page_text) ----------
-  line_patterns:
-    Undercounter:
-      - "(?i)\\bm-?iclean\\s*u\\b"        # M-iClean U family
-      - "(?i)\\bupster\\s*u\\b"
-      - "(?i)\\bundercounter\\b|\\bglasswasher\\b"
-    Door Type:
-      - "(?i)\\bm-?iclean\\s*h\\b"
-      - "(?i)\\bhood\\s*type\\b|\\bdoor\\s*type\\b"
-    Rack Conveyor:
-      - "(?i)\\bka\\s*series\\b|\\bupster\\s*k\\b|\\brack\\s*type\\b"
-    Flight Type:
-      - "(?i)\\bm-?iq\\b.*\\bflight\\b|\\bflight\\s*type\\b"
-    Prep Washer:
-      - "(?i)\\bm-?iclean\\s*pf\\b|\\butensil\\s*washer\\b|\\bpot\\s*&?\\s*pan\\b"
+---
+Douglas:
+  pdf_host_allow:
+    - "dougmac.com"
+    - "www.dougmac.com"
+
+  # Only product pages
+  page_allow:
+    - "^/industrial-washers/"
+    - "^/product/"
+
+  pdf_path_line_hints:
+    Prep Washer: "(?s).*"   # all PDFs → prep washer
+
+---
+LVO:
+  pdf_host_allow:
+    - "lvomfg.com"
+    - "www.lvomfg.com"
+
+  page_allow:
+    - "^/site/product/"
+    - "^/site/product-category/"
+
+  tile_selectors:
+    - ".products .product a"
+
+  pdf_path_line_hints:
+    Prep Washer: "(?i)/product/(fl|pt|pl)\\d+"
