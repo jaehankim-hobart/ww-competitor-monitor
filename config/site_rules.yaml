@@ -42,12 +42,16 @@ Jackson:
   pdf_host_allow:
     - "jacksonwws.com"
     - "www.jacksonwws.com"
+    - "jackson-wws.dcatalog.com"
 
   # Keep to key product/category pages only
   page_allow:
     - "^/products/"
     - "^/wp-content/uploads/"     # for direct PDF pages
-    - "^/categories/(high-temp|low-temp|undercounters|conveyors-good-better-best)/"
+    - "^/categories/(high-temp|low-temp|undercounters|conveyors-good-better-best)/"  
+    - "^/v/[A-Za-z0-9-]+-Spec-Sheet/?$"      # <— DCatalog viewer path (spec names)
+    - "^/v/[^/]+/?\\?page=\\d+$"             # <— viewer with page param
+
 
   pdf_path_line_hints:
     Rack Conveyor: "(?i)rackstar|rack[-_]?conveyor"
