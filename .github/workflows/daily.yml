@@ -81,6 +81,16 @@ jobs:
             output/run_pdf_events.csv
             preview.html
           if-no-files-found: ignore
+      
+      - name: Upload debug HTML (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-debug-html
+          path: output/debug
+          if-no-files-found: ignore
+
+
 
       # If you want to move sending OUT of the script and into the workflow,
       # un-comment below and set SEND_MODE=NONE inside the script to skip sending there.
