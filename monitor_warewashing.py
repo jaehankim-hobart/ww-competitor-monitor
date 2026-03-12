@@ -440,6 +440,31 @@ def _get_scraper():
         _scraper.headers.update(session.headers)
     return _scraper
 
+
+def _scraper_get_html(url: str):
+    """Fetch HTML via cloudscraper once (used when 200-but-empty)."""
+    if not _should_use_scraper(url):
+        return None, None
+    try:
+        sc = _get_scraper()
+        headers = {}
+        if "Referer" in session.headers:
+            headers["Referer"] = session.headers["Referer"]
+        r = sc.get(url, timeout=REQUEST_TIMEOUT, allow_redirects=True, headers=headers or None)
+        if os.getenv("DEBUG_LOG", "0") == "1" and r is not None and r.status_code >= 400:
+            print(f"[HTTP-SCRAPER-GET] {r.status_code} {r.reason} :: {url}")
+        r.raise_for_status()
+        # prime main session cookies for next calls on same host
+        try:
+            session.cookies.update(r.cookies)
+        except Exception:
+            pass
+        return r.text, r.headers
+    except Exception as e:
+        dbg(f"[SCRAPER-GET] {url} -> {e}")
+        return None, None
+
+
 def safe_request(method, url):
     """
     Primary HTTP entry. Uses requests.Session by default.
@@ -720,13 +745,40 @@ def crawl_seed(cur, competitor, line, url):
     if not html:
         print(f"[CRAWL] NO HTML for {competitor} | {line} | {url}")
         return results
-
+    
+    
     title, links = extract_links(html, url)
     embedded = extract_embedded_links(html, url)
     if embedded:
         links.extend((e, "") for e in sorted(embedded))
+    
+    # If we saw suspiciously few links, try one refetch with cloudscraper (Champion/CMA)
+    if len(links) < 5 and _is_scraper_host(url) and os.getenv("USE_CLOUDSCRAPER", "0") == "1":
+        if os.getenv("DEBUG_LOG", "0") == "1":
+            print(f"[RETRY] {competitor} seed has only {len(links)} links; retrying via cloudscraper … {url}")
+        html2, headers2 = _scraper_get_html(url)
+        if html2:
+            html = html2
+            headers = headers2
+            title, links = extract_links(html, url)
+            embedded = extract_embedded_links(html, url)
+            if embedded:
+                links.extend((e, "") for e in sorted(embedded))
+    
     print(f"[CRAWL] {competitor} | {line} | {url} -> {len(links)} links")
 
+    # is this right indent?
+    if os.getenv("DEBUG_LOG","0") == "1" and len(links) < 10:
+        os.makedirs("output/debug", exist_ok=True)
+        from urllib.parse import quote
+        safe_name = quote(url, safe="")[:180]
+        with open(f"output/debug/{safe_name}.html", "w", encoding="utf-8") as f:
+            f.write(html or "")
+        print(f"[DEBUG] Saved HTML snapshot: output/debug/{safe_name}.html")
+
+
+
+    
     # Record the seed page
     content_hash = sha256_bytes(strip_main_text(html).encode("utf-8"))
     change, _ = record_resource(cur, url, competitor, line, "html", headers, content_hash, title)
