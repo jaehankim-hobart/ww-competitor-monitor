@@ -27,7 +27,7 @@ Champion:
   pdf_path_line_hints:
     Door Type: "(?i)/door-type/"
     Undercounter: "(?i)/undercounter-dishwashers/"
-    Prep Washer: "(?i)/pot-pan/"
+    Prep Washer: "(?i)/pot[-_ ]?pan/"
     Rack Conveyor: "(?i)/rack-conveyors/"
     Flight Type: "(?i)/flight-machines/"
 
