@@ -37,6 +37,8 @@ Champion:
     - ".cards .card a"
 
 Jackson:
+  pdf_accept_all: true # one run only on 2026-03-12. change to false after
+
   pdf_host_allow:
     - "jacksonwws.com"
     - "www.jacksonwws.com"
