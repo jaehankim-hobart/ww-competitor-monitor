@@ -233,31 +233,26 @@ def extract_embedded_links(html: str, base: str) -> set[str]:
 # -------------------
 # DCatalog: surface the original PDF download target from viewer pages
 # -------------------
+
 def extract_dcatalog_pdf_link(html: str, base_url: str) -> set[str]:
-    """
-    DCatalog viewer often injects the real PDF URL inside inline <script> JSON,
-    or exposes it as a visible 'Download PDF' anchor when enabled by publisher.
-    We scan <script> blocks for absolute *.pdf URLs and also look for anchors
-    whose text contains 'Download PDF'.
-    """
     out = set()
     if not html:
         return out
-    # 1) Explicit anchors containing '.pdf' and 'Download PDF'
-    for m in re.finditer(r'<a[^>]+href="([^"]+\.pdf[^"]*)"[^>]*>(?:[^<]*download[^<]*pdf[^<]*)</a>',
-                         html, re.I):
-        out.add(urljoin(base_url, m.group(1)))
-    # 2) Inline <script> blocks with .pdf strings (JSON config etc.)
-    for m in re.finditer(r'<script[^>]*>(.*?)</script>', html, re.I | re.S):
-        block = m.group(1) or ""
-        if ".pdf" not in block.lower():
-            continue
-        for p in re.findall(r'https?://[^"\'>\s]+\.pdf[^\s"\'>]*', block, re.I):
+    soup = BeautifulSoup(html, "lxml")
+
+    # 1) Visible anchors (explicit .pdf or text indicates PDF download)
+    for a in soup.find_all("a", href=True):
+        text = (a.get_text(" ", strip=True) or "").lower()
+        href = a["href"]
+        if ".pdf" in href.lower() or ("download" in text and "pdf" in text):
+            out.add(urljoin(base_url, href))
+
+    # 2) Script blocks (look for absolute *.pdf)
+    pdf_rx = re.compile(r"https?://[^\s\"'>]+\.pdf(?:\?[^\s\"'>]*)?", re.I)
+    for sc in soup.find_all("script"):
+        content = sc.string or sc.get_text() or ""
+        for p in pdf_rx.findall(content):
             out.add(urljoin(base_url, p))
-    # 3) Anchors saying 'Download PDF' but hiding extension
-    for m in re.finditer(r'<a[^>]+href="([^"]+)"[^>]*>(?:[^<]*download[^<]*pdf[^<]*)</a>',
-                         html, re.I):
-        out.add(urljoin(base_url, m.group(1)))
     return out
 
 # -------------------
@@ -473,7 +468,7 @@ def safe_request(method, url):
         if os.getenv("DEBUG_LOG", "0") == "1" and r is not None and r.status_code >= 400:
             print(f"[HTTP-{method}] {r.status_code} {r.reason} :: {url}")
         # If 403 and we want the scraper, try it before raising
-        if r is not None and r.status_code == 403 and _should_use_scraper(url) and method in ("GET", "HEAD"):
+        if r is not None and r.status_code in (403, 503) and _should_use_scraper(url) and method in ("GET", "HEAD"):
             try:
                 sc = _get_scraper()
                 headers = {}
@@ -1320,11 +1315,13 @@ def export_pdf_lists(cur):
 
     # A. All known PDFs (from resources)
     cur.execute("""
-      SELECT competitor, line, kind, url, last_modified, etag, hash, last_seen
-      FROM resources
-      WHERE kind='pdf'
-      ORDER BY competitor, line, url
-    """)
+        SELECT ts,competitor,line,what AS kind,change,url,archived_path,archived_url,new_archived_url
+        FROM events
+        WHERE what IN ('Spec Sheet','Data Sheet','Brochure')
+          AND ts = ?
+        ORDER BY ts DESC, competitor, line
+    """, (run_ts,))
+
     rows = cur.fetchall()
     with open("output/all_pdfs.csv", "w", encoding="utf-8") as f:
         f.write("competitor,line,kind,url,last_modified,etag,hash,last_seen\n")
@@ -1386,14 +1383,14 @@ def main():
         all_events = sample_events_for_preview()
     else:
         all_events = crawl_all(cur)
-
+    run_ts = datetime.now(timezone.utc).isoformat() # is this correct location
     # Persist crawl events (now includes new_archived_url / old_archived_url)
     for e in all_events:
         cur.execute("""
           INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url, title, new_archived_url, old_archived_url)
           VALUES(?,?,?,?,?,?,?,?,?,?,?)
         """, (
-            datetime.now(timezone.utc).isoformat(),
+            run_ts,
             e["competitor"], e["line"], e["url"], e["what"], e["change"],
             e.get("archived_path"), e.get("archived_url"),
             e.get("title"),
@@ -1402,7 +1399,7 @@ def main():
         ))
     con.commit()
     # Export audit CSVs for artifacts
-    export_pdf_lists(cur)
+    export_pdf_lists(cur, run_ts)
 
     subject, body = compose_email(all_events)
 
