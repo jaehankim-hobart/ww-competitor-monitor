@@ -1345,6 +1345,7 @@ def export_pdf_lists(cur, run_ts: str):
 # -------------------
 # Main
 # -------------------
+
 def main():
     con = init_db()
     cur = con.cursor()
@@ -1352,86 +1353,180 @@ def main():
     # Ensure archive structure exists
     ensure_archive_tree()
 
-    use_samples   = os.getenv("SAMPLE_EVENTS") == "1"
+    use_samples = os.getenv("SAMPLE_EVENTS") == "1"
     force_preview = os.getenv("WRITE_PREVIEW") == "1"
+    weekly_mode = os.getenv("SEND_WEEKLY") == "1"
 
-    print(f"[INFO] BOOTSTRAP_ARCHIVE={os.getenv('BOOTSTRAP_ARCHIVE')} "
-          f"SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} WRITE_PREVIEW={os.getenv('WRITE_PREVIEW')} "
-          f"ARCHIVE_ALL_PDFS={os.getenv('ARCHIVE_ALL_PDFS')}")
+    print(
+        f"[INFO] BOOTSTRAP_ARCHIVE={os.getenv('BOOTSTRAP_ARCHIVE')} "
+        f"SAMPLE_EVENTS={os.getenv('SAMPLE_EVENTS')} "
+        f"WRITE_PREVIEW={os.getenv('WRITE_PREVIEW')} "
+        f"ARCHIVE_ALL_PDFS={os.getenv('ARCHIVE_ALL_PDFS')} "
+        f"SEND_WEEKLY={weekly_mode}"
+    )
 
-    # --- BOOTSTRAP: crawl & archive, push, and exit (no email) ---
+    # -------------------------------------------------------
+    # BOOTSTRAP MODE (crawl → archive → push → exit)
+    # -------------------------------------------------------
     if BOOTSTRAP and not use_samples:
         print("[BOOTSTRAP] Starting full archive …")
         all_events = crawl_all(cur)
         con.commit()
+
         archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
-        num_archived   = len([p for p in archived_files if p])
+        num_archived = len([p for p in archived_files if p])
+
         print(f"[BOOTSTRAP] Discovered {len(all_events)} events; archived files: {num_archived}")
         if num_archived:
             git_commit_and_push([p for p in archived_files if p], "bootstrap: initial PDF archive")
             print(f"[BOOTSTRAP] Archived and pushed {num_archived} PDFs.")
         else:
             print("[BOOTSTRAP] No PDFs discovered to archive (check seeds/logs).")
+
         print("[BOOTSTRAP] Done. Exiting without sending email.")
         return
 
-    # --- Daily / Sample runs ---
+    # -------------------------------------------------------
+    # DAILY / SAMPLE RUN CRAWL
+    # -------------------------------------------------------
     if use_samples:
         all_events = sample_events_for_preview()
     else:
         all_events = crawl_all(cur)
-    run_ts = datetime.now(timezone.utc).isoformat() # is this correct location
-    # Persist crawl events (now includes new_archived_url / old_archived_url)
+
+    # Run timestamp (consistent for whole batch)
+    run_ts = datetime.now(timezone.utc).isoformat()
+
+    # -------------------------------------------------------
+    # Write event rows to DB (resources already updated earlier)
+    # -------------------------------------------------------
     for e in all_events:
-        cur.execute("""
-          INSERT INTO events(ts, competitor, line, url, what, change, archived_path, archived_url, title, new_archived_url, old_archived_url)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            run_ts,
-            e["competitor"], e["line"], e["url"], e["what"], e["change"],
-            e.get("archived_path"), e.get("archived_url"),
-            e.get("title"),
-            e.get("new_archived_url"),
-            e.get("old_archived_url"),
-        ))
+        cur.execute(
+            """
+            INSERT INTO events(ts, competitor, line, url, what, change,
+                               archived_path, archived_url, title,
+                               new_archived_url, old_archived_url)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                run_ts,
+                e["competitor"],
+                e["line"],
+                e["url"],
+                e["what"],
+                e["change"],
+                e.get("archived_path"),
+                e.get("archived_url"),
+                e.get("title"),
+                e.get("new_archived_url"),
+                e.get("old_archived_url"),
+            )
+        )
     con.commit()
-    # Export audit CSVs for artifacts
+
+    # -------------------------------------------------------
+    # Daily Email-Sending Logic
+    # (Option A: send only if there ARE updates)
+    # -------------------------------------------------------
+    if not weekly_mode:
+        if not all_events:
+            print("[DAILY] No updates → No email sent.")
+            return  # <-- suppress email on no-update days
+
+    # -------------------------------------------------------
+    # Weekly Digest Mode (always sends)
+    # -------------------------------------------------------
+    if weekly_mode:
+        print("[WEEKLY] Weekly digest mode enabled.")
+
+        # Load last 7 days of events
+        cur.execute("""
+            SELECT ts, competitor, line, url, what, change,
+                   archived_path, archived_url, new_archived_url, old_archived_url, title
+            FROM events
+            WHERE ts >= datetime('now', '-7 days')
+            ORDER BY ts DESC
+        """)
+        rows = cur.fetchall()
+
+        # Convert DB rows → event dicts
+        weekly_events = []
+        for r in rows:
+            weekly_events.append({
+                "ts": r[0],
+                "competitor": r[1],
+                "line": r[2],
+                "url": r[3],
+                "what": r[4],
+                "change": r[5],
+                "archived_path": r[6],
+                "archived_url": r[7],
+                "new_archived_url": r[8],
+                "old_archived_url": r[9],
+                "title": r[10],
+            })
+
+        subject, body = compose_email(weekly_events)
+
+        # Build attachments
+        attachments = []
+        try:
+            attachments = build_reports_and_get_attachments()
+        except Exception as ex:
+            print(f"[REPORT] Failed to build attachments: {ex}")
+
+        # Send weekly digest
+        if SEND_MODE.upper() == "GRAPH":
+            send_via_graph(subject, body, file_paths=attachments)
+        else:
+            send_via_smtp(subject, body)
+
+        print("[WEEKLY] Digest email sent.")
+        return
+
+    # -------------------------------------------------------
+    # DAILY EMAIL (updates only)
+    # -------------------------------------------------------
+    # Export audit CSVs
     export_pdf_lists(cur, run_ts)
 
+    # Build email HTML
     subject, body = compose_email(all_events)
 
-    # Commit/push any archived PDFs we just saved
+    # Push new PDF archives
     archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
     if archived_files:
         git_commit_and_push([p for p in archived_files if p], "chore: archive PDFs for today")
 
-    # Build preview if enabled
+    # Preview if enabled
     if use_samples or force_preview:
         write_preview_file(subject, body, "preview.html")
 
-    # Build attachments (manifest.csv + pivot) if classifier modules present
+    # Build attachments
     attachments = []
     try:
         attachments = build_reports_and_get_attachments()
     except Exception as ex:
         print(f"[REPORT] Failed to build attachments: {ex}")
 
-    # Send
+    # Send via Graph or SMTP
     if SEND_MODE.upper() == "GRAPH":
         if not (GRAPH_TENANT and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET) or use_samples:
-            print("Graph credentials not set or SAMPLE mode enabled. Skipping send.")
+            print("Graph credentials not set or SAMPLE mode → printing only.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
             if attachments:
                 print("Attachments:", attachments)
             return
+
         send_via_graph(subject, body, file_paths=attachments)
     else:
         if use_samples:
-            print("SAMPLE mode with SMTP selected—printing only.")
+            print("SMTP + SAMPLE mode → printing only.")
             print("=== SUBJECT ==="); print(subject)
             print("=== HTML BODY ==="); print(body)
             return
+
         send_via_smtp(subject, body)
 
 # -------------------
