@@ -22,6 +22,54 @@ from urllib.parse import urljoin, urlparse, unquote
 import requests
 from bs4 import BeautifulSoup
 
+
+def extract_tile_links(html: str, base_url: str, competitor: str):
+    """
+    Return list[(href, title)] of likely 'product tile' anchors.
+    Uses per-site CSS selectors if provided; otherwise falls back
+    to common card/tile patterns.
+    """
+    out = []
+    soup = BeautifulSoup(html or "", "lxml")
+    seen = set()
+
+    # 1) Site-specific selectors
+    sels = _get_tile_selectors(competitor)
+    for sel in (sels or []):
+        for a in soup.select(sel):
+            if a.name != "a":
+                a = a.find("a", href=True)
+            if not a or not a.get("href"):
+                continue
+            href = urljoin(base_url, a["href"])
+            title = (a.get_text(" ", strip=True) or "").strip()
+            if href not in seen:
+                seen.add(href)
+                out.append((href, title))
+
+    # 2) Generic fallback: cards/tiles with a single prominent anchor
+    if not out:
+        for card in soup.select(".card, .tile, .product, .product-card, .grid-item"):
+            a = card.find("a", href=True)
+            if not a:
+                continue
+            href = urljoin(base_url, a["href"])
+            # Prefer heading-like text inside the card
+            title = ""
+            for htag in ("h1","h2","h3","h4",".card-title",".product-title"):
+                h = card.select_one(htag)
+                if h and h.get_text(strip=True):
+                    title = h.get_text(" ", strip=True)
+                    break
+            if not title:
+                title = a.get_text(" ", strip=True)
+            title = (title or "").strip()
+            if href not in seen:
+                seen.add(href)
+                out.append((href, title))
+    return out
+
+
 # -------------------
 # Optional: post-crawl classifier & reporting
 # -------------------
@@ -508,8 +556,8 @@ def archive_pdf(competitor: str, line: str, url: str, content: bytes, display_na
     Save the PDF under archive/<competitor>/<line>/YYYY-MM-DD__NAME__sha256_xxxxxxxx.pdf
     Returns the local repo path to the archived PDF.
     """
-    safe_comp = re.sub(r"[\\\/]+", "_", competitor).strip()
-    safe_line = re.sub(r"[\\\/]+", "_", line).strip()
+    safe_comp = re.sub(r"[\\/]+", "_", competitor).strip()
+    safe_line = re.sub(r"[\\/]+", "_", line).strip()
     subdir = os.path.join(ARCHIVE_DIR, safe_comp, safe_line)
     ensure_dir(subdir)
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -675,8 +723,8 @@ def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor:
 # -------------------
 # Crawl logic
 # -------------------
-ABS_PDF_RX = re.compile(r'https?://[^"\'\<\>]+?\.pdf(?:\?[^"\'\<\>]*)?', re.I)
-REL_PDF_RX = re.compile(r'(?:(?:\./|\../|/)[^"\'\<\>\s]+?\.pdf(?:\?[^"\'\<\>\s]*)?)', re.I)
+ABS_PDF_RX = re.compile(r'https?://[^"\'\<>]+?\.pdf(?:\?[^"\'\<>]*)?', re.I)
+REL_PDF_RX = re.compile(r'(?:(?:\./|\../|/)[^"\'\<>\s]+?\.pdf(?:\?[^"\'\<>\s]*)?)', re.I)
 
 def crawl_seed(cur, competitor, line, url):
     # PRIME host (important for CF/WP)
@@ -1055,7 +1103,7 @@ def compose_email(all_events):
         html.append("<tr>")
         # First column with icon (kept same rendering approach)
         cid, _ = line_icon_name(line)
-        icon_html = f'cid:{cid}' if cid else ""
+        icon_html = f"<img src='cid:{cid}' alt='{line} icon' style='height:16px; vertical-align:middle; margin-right:6px;'/>" if cid else ""
         html.append(
             f"<td style='font-weight:600; width:{EMAIL_COL_WIDTH}; {wrap_css} "
             f"background:{EMAIL_HEADER_BG}; color:{EMAIL_HEADER_FG}; padding:6px 8px; text-align:left;'>"
