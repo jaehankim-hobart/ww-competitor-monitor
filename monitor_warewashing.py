@@ -196,7 +196,7 @@ ACRONYM_KEEP = {"PRO", "VHR", "ER", "HT", "LT", "HR"}
 def beautify_filename(url_or_name: str) -> str:
     name = unquote(url_or_name.split("?")[0].split("#")[0].split("/")[-1])
     name = re.sub(r"\.pdf$", "", name, flags=re.I)
-    name = re.sub(r"[_\-]+", " ", name
+    name = re.sub(r"[_\-]+", " ", name)
     # Normalize common doc terms
     name = re.sub(r"\b(spec(?:\.?ification)?\s*sheet|specsheet)\b", "Spec Sheet", name, flags=re.I)
     name = re.sub(r"\b(data\s*sheet|datasheet|product\s*data|technical\s*data|tech\s*data)\b", "Data Sheet", name, flags=re.I)
