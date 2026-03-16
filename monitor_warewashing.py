@@ -184,7 +184,7 @@ def display_url_label(href: str, max_len: int = 60) -> str:
         last = path.split("/")[-1] if path else ""
         label = f"{u.netloc}/{last}" if last else (u.netloc or href)
         label = unquote(label)
-        label = re.sub(r"[_\-]+", " ", label).strip()
+        label = re.sub(r"[_-]+", " ", label).strip()
         if len(label) > max_len:
             keep = max_len // 2 - 1
             label = f"{label[:keep]}…{label[-keep:]}"
@@ -196,7 +196,7 @@ ACRONYM_KEEP = {"PRO", "VHR", "ER", "HT", "LT", "HR"}
 def beautify_filename(url_or_name: str) -> str:
     name = unquote(url_or_name.split("?")[0].split("#")[0].split("/")[-1])
     name = re.sub(r"\.pdf$", "", name, flags=re.I)
-    name = re.sub(r"[_\-]+", " ", name)
+    name = re.sub(r"[_-]+", " ", name)
     # Normalize common doc terms
     name = re.sub(r"\b(spec(?:\.?ification)?\s*sheet|specsheet)\b", "Spec Sheet", name, flags=re.I)
     name = re.sub(r"\b(data\s*sheet|datasheet|product\s*data|technical\s*data|tech\s*data)\b", "Data Sheet", name, flags=re.I)
