@@ -164,8 +164,8 @@ def ensure_archive_tree():
         for line in LINES_ORDER:
             subdir = os.path.join(
                 ARCHIVE_DIR,
-                re.sub(r"[\\\/]+", "_", competitor).strip(),
-                re.sub(r"[\\\/]+", "_", line).strip()
+                re.sub(r"[\\/]+", "_", competitor).strip(),
+                re.sub(r"[\\/]+", "_", line).strip()
             )
             os.makedirs(subdir, exist_ok=True)
 
@@ -184,7 +184,7 @@ def display_url_label(href: str, max_len: int = 60) -> str:
         last = path.split("/")[-1] if path else ""
         label = f"{u.netloc}/{last}" if last else (u.netloc or href)
         label = unquote(label)
-        label = re.sub(r"[_\-]+", " ", label).strip()
+        label = re.sub(r"[_-]+", " ", label).strip()
         if len(label) > max_len:
             keep = max_len // 2 - 1
             label = f"{label[:keep]}…{label[-keep:]}"
@@ -196,7 +196,7 @@ ACRONYM_KEEP = {"PRO", "VHR", "ER", "HT", "LT", "HR"}
 def beautify_filename(url_or_name: str) -> str:
     name = unquote(url_or_name.split("?")[0].split("#")[0].split("/")[-1])
     name = re.sub(r"\.pdf$", "", name, flags=re.I)
-    name = re.sub(r"[_\-]+", " ", name)
+    name = re.sub(r"[_-]+", " ", name
     # Normalize common doc terms
     name = re.sub(r"\b(spec(?:\.?ification)?\s*sheet|specsheet)\b", "Spec Sheet", name, flags=re.I)
     name = re.sub(r"\b(data\s*sheet|datasheet|product\s*data|technical\s*data|tech\s*data)\b", "Data Sheet", name, flags=re.I)
@@ -1310,10 +1310,24 @@ def build_reports_and_get_attachments() -> list[str]:
 # -------------------
 # Exports for audit (PDF inventory and today's PDF events)
 # -------------------
-def export_pdf_lists(cur):
+
+def export_pdf_lists(cur, run_ts: str):
     os.makedirs("output", exist_ok=True)
 
-    # A. All known PDFs (from resources)
+    # A. All known PDFs (from resources) -> output/all_pdfs.csv
+    cur.execute("""
+        SELECT competitor, line, kind, url, last_modified, etag, hash, last_seen
+        FROM resources
+        WHERE kind='pdf'
+        ORDER BY competitor, line, url
+    """)
+    rows = cur.fetchall()
+    with open("output/all_pdfs.csv", "w", encoding="utf-8") as f:
+        f.write("competitor,line,kind,url,last_modified,etag,hash,last_seen\n")
+        for r in rows:
+            f.write(",".join('' if (x is None) else str(x).replace(',', ' ') for x in r) + "\n")
+
+    # B. PDFs that fired events in THIS run -> output/run_pdf_events.csv
     cur.execute("""
         SELECT ts,competitor,line,what AS kind,change,url,archived_path,archived_url,new_archived_url
         FROM events
@@ -1321,23 +1335,6 @@ def export_pdf_lists(cur):
           AND ts = ?
         ORDER BY ts DESC, competitor, line
     """, (run_ts,))
-
-    rows = cur.fetchall()
-    with open("output/all_pdfs.csv", "w", encoding="utf-8") as f:
-        f.write("competitor,line,kind,url,last_modified,etag,hash,last_seen\n")
-        for r in rows:
-            # simple CSV escaping (replace commas in values)
-            f.write(",".join('' if (x is None) else str(x).replace(',', ' ') for x in r) + "\n")
-
-    # B. PDFs that fired events in this run (added/updated)
-    # We select events for known doc kinds; feel free to broaden as needed.
-    cur.execute("""
-      SELECT ts,competitor,line,what AS kind,change,url,archived_path,archived_url,new_archived_url
-      FROM events
-      WHERE what IN ('Spec Sheet','Data Sheet','Brochure')
-        AND ts >= (SELECT COALESCE(MAX(ts), '') FROM events)  -- last inserted batch in this session
-      ORDER BY ts DESC, competitor, line
-    """)
     evs = cur.fetchall()
     with open("output/run_pdf_events.csv", "w", encoding="utf-8") as f:
         f.write("ts,competitor,line,kind,change,url,archived_path,archived_url,new_archived_url\n")
