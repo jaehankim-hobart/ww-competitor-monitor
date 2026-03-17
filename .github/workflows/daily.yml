@@ -98,6 +98,10 @@ jobs:
         if: github.event_name == 'workflow_dispatch'        
         env:
           SEND_WEEKLY: "1"
+          GRAPH_TENANT_ID: ${{ secrets.TENANT_ID }}
+          GRAPH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
         run: python monitor_warewashing.py
 
 
