@@ -714,30 +714,6 @@ def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor:
         return best, min(0.95, 0.80 + 0.05 * scores[best])
     return "Other", 0.5
 
-
-
-def get_last_update_date(cur, competitor, line):
-    """
-    Returns ISO timestamp of last real update for the competitor + line.
-    Only counts 'added' or 'updated' events from daily/weekly runs.
-    Does NOT count bootstrap or first-seen URLs.
-    Returns None if no past updates exist.
-    """
-    cur.execute("""
-        SELECT ts
-        FROM events
-        WHERE competitor=? 
-          AND line=?
-          AND change IN ('added', 'updated')
-        ORDER BY ts DESC
-        LIMIT 1
-    """, (competitor, line))
-    row = cur.fetchone()
-    return row[0] if row else None
-
-
-
-
 # -------------------
 # Crawl logic
 # -------------------
@@ -1030,6 +1006,30 @@ def crawl_all(cur):
                 time.sleep(0.3) # politeness delay
     print(f"[SEEDS] Crawl finished with {len(events)} events")
     return events
+
+
+
+def get_last_update_date(cur, competitor, line):
+    """
+    Returns ISO timestamp of last real update for the competitor + line.
+    Only counts 'added' or 'updated' events from daily/weekly runs.
+    Does NOT count bootstrap or first-seen URLs.
+    Returns None if no past updates exist.
+    """
+    cur.execute("""
+        SELECT ts
+        FROM events
+        WHERE competitor=? 
+          AND line=?
+          AND change IN ('added', 'updated')
+        ORDER BY ts DESC
+        LIMIT 1
+    """, (competitor, line))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+
 
 # -------------------
 # Pivot for email table
