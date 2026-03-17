@@ -123,16 +123,12 @@ jobs:
       ###################################################################
       - name: Upload outputs (manifest, pivot, PDF lists)
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ww-monitor-outputs
           path: |
-            output/manifest.csv
-            output/manifest.rules.csv
-            output/report_by_product_line.csv
-            output/all_pdfs.csv
-            output/run_pdf_events.csv
-            preview.html
+            output/**
           if-no-files-found: ignore
 
       - name: Upload debug HTML (tile extractions, snapshots)
