@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write     # needed for git push of archived PDFs
+  contents: write
   actions: read
 
 concurrency:
@@ -27,18 +27,40 @@ jobs:
       WRITE_PREVIEW: "1"
       USE_CLOUDSCRAPER: "1"
 
-      # Graph email credentials
       GRAPH_TENANT_ID: ${{ secrets.TENANT_ID }}
       GRAPH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
       GRAPH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
       MAIL_TO: ${{ secrets.MAIL_TO }}
 
     steps:
+      ###################################################################
+      # CHECKOUT
+      ###################################################################
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: true
 
+      ###################################################################
+      # RESTORE PERSISTENT STATE (state.db + archive/)
+      ###################################################################
+      - name: Restore DB Cache
+        id: dbcache
+        uses: actions/cache@v4
+        with:
+          path: state.db
+          key: ww-monitor-db
+
+      - name: Restore Archive Cache
+        id: archivecache
+        uses: actions/cache@v4
+        with:
+          path: archive
+          key: ww-monitor-archive
+
+      ###################################################################
+      # PYTHON SETUP
+      ###################################################################
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -51,27 +73,44 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 lxml pyyaml pandas scikit-learn joblib PyPDF2 msal cloudscraper
 
-      #######################################################################
-      # DAILY RUN (default)
-      #######################################################################
+      ###################################################################
+      # DAILY CRAWL
+      ###################################################################
       - name: Daily crawl + archive + email (only if updates exist)
         if: github.event.schedule == '15 7 * * *'
         run: |
           python monitor_warewashing.py
 
-      #######################################################################
-      # WEEKLY DIGEST RUN
-      #######################################################################
+      ###################################################################
+      # WEEKLY DIGEST CRAWL
+      ###################################################################
       - name: Weekly digest crawl + always send weekly email
         if: github.event.schedule == '30 7 * * WED'
         env:
-          SEND_WEEKLY: "1"        # <---- THIS triggers weekly-mode behavior
+          SEND_WEEKLY: "1"
         run: |
           python monitor_warewashing.py
 
-      #######################################################################
-      # Upload artifacts for inspection
-      #######################################################################
+      ###################################################################
+      # SAVE UPDATED STATE
+      ###################################################################
+      - name: Save updated DB cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state.db
+          key: ww-monitor-db
+
+      - name: Save updated Archive cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: archive
+          key: ww-monitor-archive
+
+      ###################################################################
+      # ARTIFACTS — MANIFEST, REPORTS, PREVIEW
+      ###################################################################
       - name: Upload outputs (manifest, pivot, PDF lists)
         if: always()
         uses: actions/upload-artifact@v4
