@@ -1086,7 +1086,7 @@ def line_icon_name(line: str):
 # -------------------
 # Email builder (HTML)
 # -------------------
-def compose_email(all_events):
+def compose_email(all_events, cur):
     """
     Build the subject + HTML body
     """
@@ -1499,7 +1499,7 @@ def main():
                 "title": r[10],
             })
 
-        subject, body = compose_email(weekly_events)
+        subject, body = compose_email(weekly_events, cur)
 
         # Build attachments
         attachments = []
@@ -1524,7 +1524,7 @@ def main():
     export_pdf_lists(cur, run_ts)
 
     # Build email HTML
-    subject, body = compose_email(all_events)
+    subject, body = compose_email(all_events, cur)
 
     # Push new PDF archives
     archived_files = [e["archived_path"] for e in all_events if e.get("archived_path")]
