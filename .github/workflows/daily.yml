@@ -121,15 +121,14 @@ jobs:
       ###################################################################
       # ARTIFACTS — MANIFEST, REPORTS, PREVIEW
       ###################################################################
+
       - name: Upload outputs (manifest, pivot, PDF lists)
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ww-monitor-outputs
-          path: |
-            output/**
-          if-no-files-found: ignore
+          path:
 
       - name: Upload debug HTML (tile extractions, snapshots)
         if: always()
