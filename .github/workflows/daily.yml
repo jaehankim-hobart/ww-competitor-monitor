@@ -92,6 +92,14 @@ jobs:
           python monitor_warewashing.py
 
       ###################################################################
+      # Manual button run in GitHub Actions UI
+      ###################################################################
+      - name: Manual trigger run
+        if: github.event_name == 'workflow_dispatch'
+        run: python monitor_warewashing.py
+
+
+      ###################################################################
       # SAVE UPDATED STATE
       ###################################################################
       - name: Save updated DB cache
