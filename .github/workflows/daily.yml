@@ -95,7 +95,9 @@ jobs:
       # Manual button run in GitHub Actions UI
       ###################################################################
       - name: Manual trigger run
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch'        
+        env:
+          SEND_WEEKLY: "1"
         run: python monitor_warewashing.py
 
 
