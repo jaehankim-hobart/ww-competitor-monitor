@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -715,6 +714,30 @@ def infer_line_via_rules(url: str, anchor_text: str, page_text: str, competitor:
         return best, min(0.95, 0.80 + 0.05 * scores[best])
     return "Other", 0.5
 
+
+
+def get_last_update_date(cur, competitor, line):
+    """
+    Returns ISO timestamp of last real update for the competitor + line.
+    Only counts 'added' or 'updated' events from daily/weekly runs.
+    Does NOT count bootstrap or first-seen URLs.
+    Returns None if no past updates exist.
+    """
+    cur.execute("""
+        SELECT ts
+        FROM events
+        WHERE competitor=? 
+          AND line=?
+          AND change IN ('added', 'updated')
+        ORDER BY ts DESC
+        LIMIT 1
+    """, (competitor, line))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+
+
 # -------------------
 # Crawl logic
 # -------------------
@@ -1011,7 +1034,7 @@ def crawl_all(cur):
 # -------------------
 # Pivot for email table
 # -------------------
-def pivot_for_table(all_events):
+def pivot_for_table(all_events, cur):
     competitors = COMPETITOR_COLS[:]
     extras = [e["competitor"] for e in all_events if e["competitor"] not in competitors]
     competitors += [c for c in sorted(set(extras))]
@@ -1072,7 +1095,7 @@ def compose_email(all_events):
         subject = "Daily WW Competitor monitor – " + ", ".join(comps)
     else:
         subject = "Daily WW Competitor monitor – No update"
-    competitors, table, na_map = pivot_for_table(all_events)
+    competitors, table, na_map = pivot_for_table(all_events, cur)
     wrap_css = "white-space: normal; word-break: break-word; overflow-wrap: anywhere;"
     li_style = f"{wrap_css} margin:0 0 4px 0;"
     ul_style = f"margin:0 0 0 17px; padding-left:0; list-style-position: outside; {wrap_css}"
@@ -1109,12 +1132,22 @@ def compose_email(all_events):
             items = table[line].get(c, [])
             cell_style = f"width:{EMAIL_COL_WIDTH}; {wrap_css}"
             if items:
-                cell_style += f" background:{EMAIL_UPDATE_BG};"
+                cell_style += f" background:{EMAIL_UPDATE_BG};"            
             if not items:
+                # N/A if competitor has no URLs for this line
                 if na_map.get(line, {}).get(c, False):
                     cell_html = "<em>N/A</em>"
                 else:
-                    cell_html = "<em>No Update</em>"
+                    # Look up last meaningful update
+                    last = get_last_update_date(cur, c, line)
+            
+                    if last is None:
+                        # Never updated yet (ignore bootstrap / first-seen)
+                        cell_html = "<em>N/A</em>"
+                    else:
+                        # Convert TS to YYYY-MM-DD
+                        dt = last.split("T")[0]
+                        cell_html = f"<em>Last updated: {dt}</em>"
             else:
                 bullets = "".join(f"<li style='{li_style}'>{it}</li>" for it in items)
                 cell_html = f"<ul style='{ul_style}'>{bullets}</ul>"
