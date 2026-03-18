@@ -94,22 +94,16 @@ jobs:
       ###################################################################
       # Manual button run in GitHub Actions UI
       ###################################################################
-      - name: Manual trigger run
-        if: github.event_name == 'workflow_dispatch'        
+
+      - name: Manual trigger run (always send email)
+        if: github.event_name == 'workflow_dispatch'
         env:
           SEND_WEEKLY: "1"
-          GRAPH_TENANT_ID: ${{ secrets.TENANT_ID }}
-          GRAPH_CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          GRAPH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
+          GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
         run: python monitor_warewashing.py
-    
-      - name: Debug secrets presence
-        run: |
-          echo "GRAPH_TENANT_ID: ${GRAPH_TENANT_ID:+SET}"
-          echo "GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:+SET
-
-
 
       ###################################################################
       # SAVE UPDATED STATE
