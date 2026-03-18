@@ -103,6 +103,12 @@ jobs:
           GRAPH_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
         run: python monitor_warewashing.py
+    
+      - name: Debug secrets presence
+        run: |
+          echo "GRAPH_TENANT_ID: ${GRAPH_TENANT_ID:+SET}"
+          echo "GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:+SET
+
 
 
       ###################################################################
