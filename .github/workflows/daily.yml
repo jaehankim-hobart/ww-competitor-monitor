@@ -19,7 +19,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 360
 
     env:
       ARCHIVE_ALL_PDFS: "0"
