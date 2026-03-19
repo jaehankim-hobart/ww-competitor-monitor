@@ -5,7 +5,7 @@ name: WW Competitor Monitor – Daily + Weekly Digest
 on:
   schedule:
     - cron: "15 7 * * *"     # Daily run (07:15 UTC)
-    - cron: "30 7 * * WED"   # Weekly digest run (07:30 UTC every Wednesday)
+    - cron: "30 7 * * FRI"   # Weekly digest run (07:30 UTC every Wednesday)
   workflow_dispatch:
 
 permissions:
