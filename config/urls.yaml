@@ -1,96 +1,63 @@
 
 Champion:
-  Door Type:
-    - https://www.championindustries.com/our-products/door-type/
-  Undercounter:
-    - https://www.championindustries.com/our-products/undercounter-dishwashers/
-  Prep Washer:
-    - https://www.championindustries.com/our-products/pot-pan-rack-washers/
-  Rack Conveyor:
-    - https://www.championindustries.com/our-products/rack-conveyors/
-  Flight Type:
-    - https://www.championindustries.com/our-products/flight-machines/
+  Door Type: []
+  Undercounter: [] 
+  Prep Washer: []
+  Rack Conveyor: []
+  Flight Type: []
 
 Jackson:
-  Door Type:
-    - https://www.jacksonwws.com/categories/high-temp-door-types/
-    - https://www.jacksonwws.com/categories/low-temp-door-types/
-  Undercounter:
-    - https://www.jacksonwws.com/categories/undercounters/
+  Door Type: []
+  Undercounter: [] 
   Prep Washer: []
-  Rack Conveyor:
-    - https://www.jacksonwws.com/categories/conveyors-good-better-best/
-  Flight Type:
-    - https://www.jacksonwws.com/products/flightstar/
+  Rack Conveyor: []
+  Flight Type: []
 
 Meiko:
-  Door Type:
-    - https://www.meiko.com/en-us/products/commercial-dishwashers/door-type-dishwashers
-  Undercounter:
-    - https://www.meiko.com/en-us/products/commercial-dishwashers/undercounter-dishwashers
-  Prep Washer:
-    - https://www.meiko.com/en-us/products/commercial-dishwashers/pot-and-pan-washers
-  Rack Conveyor:
-    - https://www.meiko.com/en-us/products/commercial-dishwashers/rack-conveyor-dishwashers
-  Flight Type:
-    - https://www.meiko.com/en-us/products/commercial-dishwashers/flight-type-dishwashers
+  Door Type: []
+  Undercounter: [] 
+  Prep Washer: []
+  Rack Conveyor: []
+  Flight Type: []
 
 CMA:
-  Door Type:
-    - https://cmadishmachines.com/products/
-  Undercounter:
-    - https://cmadishmachines.com/cma-product-category/all-glass-washers/
-    - https://cmadishmachines.com/cma-product-category/under-counter-high-temperature-dishwashers/
-    - https://cmadishmachines.com/cma-product-category/under-counter-low-temperature-dishwashers/
-  Prep Washer:
-    - https://cmadishmachines.com/cma-product-category/pot-washer/
-  Rack Conveyor:
-    - https://cmadishmachines.com/cma-product-category/conveyor-dishwashers/
+  Door Type: []
+  Undercounter: [] 
+  Prep Washer: []
+  Rack Conveyor: []
   Flight Type: []
 
 Noble:
-  Door Type:
-    - "https://www.webstaurantstore.com/4317/single-rack-dishwashers-and-double-rack-dishwashers.html?vendor=Noble-Warewashing"
-  Undercounter:
-    - "https://www.webstaurantstore.com/4321/under-counter-dishwashers.html?vendor=Noble-Warewashing"
-  Prep Washer:
-    - "https://www.webstaurantstore.com/4321/under-counter-dishwashers.html?vendor=Noble-Warewashing"
-  Rack Conveyor:
-    - "https://www.webstaurantstore.com/4313/conveyor-dishwashers.html?vendor=Noble-Warewashing"
+  Door Type: []
+  Undercounter: [] 
+  Prep Washer: []
+  Rack Conveyor: []
   Flight Type: []
 
 ADS:
-  Door Type:
-    - https://www.americandish.com/product/upright-dish-machine-af-afc-3d-s/
-  Undercounter:
-    - https://www.americandish.com/product/undercounter-dish-machine-etaf-3-etaf-m/
+  Door Type: []
+  Undercounter: [] 
   Prep Washer: []
-  Rack Conveyor:
-    - https://www.americandish.com/product/conveyor-dish-machine-adc-44-conveyor/
+  Rack Conveyor: []
   Flight Type: []
 
 Moyer Diebel:
-  Door Type:
-    - https://www.moyerdiebel.com/door-type/
-  Undercounter:
-    - https://www.moyerdiebel.com/undercounter-dishwashers/
+  Door Type: []
+  Undercounter: [] 
   Prep Washer: []
-  Rack Conveyor:
-    - https://www.moyerdiebel.com/rack-conveyors/
+  Rack Conveyor: []
   Flight Type: []
 
 Douglas:
   Door Type: []
-  Undercounter: []
-  Prep Washer:
-    - https://www.dougmac.com/industrial-washers/commercial-pot-pan-and-utensil-washers/
+  Undercounter: [] 
+  Prep Washer: []
   Rack Conveyor: []
   Flight Type: []
 
 LVO:
   Door Type: []
-  Undercounter: []
-  Prep Washer:
-    - https://www.lvomfg.com/site/product-category/washers/pan-washers/panwasherstyle/panwasherfrontload/
+  Undercounter: [] 
+  Prep Washer: []
   Rack Conveyor: []
   Flight Type: []
